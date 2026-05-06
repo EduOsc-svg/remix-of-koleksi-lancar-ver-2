@@ -89,9 +89,12 @@ export default function CustomerHistory() {
     const query = searchTerm.toLowerCase();
     
     return customers.filter((customer) => {
-      // Check name or phone search
-      const matchesSearch = customer.name.toLowerCase().includes(query) ||
-        (customer.phone || '').toLowerCase().includes(query);
+      // Check name, phone, OR contract_ref search
+      const customerContractsAll = contracts.filter(c => c.customer_id === customer.id);
+      const matchesSearch = !query ||
+        customer.name.toLowerCase().includes(query) ||
+        (customer.phone || '').toLowerCase().includes(query) ||
+        customerContractsAll.some(c => (c.contract_ref || '').toLowerCase().includes(query));
       if (!matchesSearch) return false;
       
       // If status filter is 'all', include all customers matching search
@@ -186,7 +189,7 @@ export default function CustomerHistory() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Cari berdasarkan nama atau nomor telepon..."
+                placeholder="Cari nama, telepon, atau kode kontrak..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
