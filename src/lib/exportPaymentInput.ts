@@ -6,15 +6,9 @@ interface BulkPaymentSummary {
   contractId: string;
   customerName: string;
   contractRef: string;
-<<<<<<< HEAD
   paymentCount: number; // Pembayaran ke / kupon dibayar
   totalCoupons: number; // Kupon Bawa (handover)
   unpaidCount: number;  // Kupon Pulang (sisa belum tertagih)
-=======
-  paymentCount: number;
-  totalCoupons: number;
-  returnedCoupons: number;
->>>>>>> d0a35a3 (Update)
   dailyAmount: number;
   totalAmount: number;  // Tertagih
 }
@@ -100,15 +94,9 @@ export const exportPaymentInputToExcel = async (
 
       const key = handover.contract_id;
       const currentIndex = handover.credit_contracts.current_installment_index || 0;
-<<<<<<< HEAD
       const paidCount = Math.max(0, Math.min(currentIndex, handover.end_index) - handover.start_index + 1);
       const unpaidCount = handover.coupon_count - paidCount;
 
-=======
-  const paidCount = Math.max(0, Math.min(currentIndex, handover.end_index) - handover.start_index + 1);
-  const unpaidCount = handover.coupon_count - paidCount;
-      
->>>>>>> d0a35a3 (Update)
       const dailyAmount = handover.credit_contracts.daily_installment_amount || 0;
       const totalAmount = dailyAmount * paidCount; // Tertagih = kupon dibayar * angsuran
 
@@ -119,11 +107,7 @@ export const exportPaymentInputToExcel = async (
           contractRef: handover.credit_contracts.contract_ref,
           paymentCount: paidCount,
           totalCoupons: handover.coupon_count,
-<<<<<<< HEAD
           unpaidCount,
-=======
-          returnedCoupons: unpaidCount,
->>>>>>> d0a35a3 (Update)
           dailyAmount,
           totalAmount,
         });
@@ -145,11 +129,7 @@ export const exportPaymentInputToExcel = async (
           contractRef,
           paymentCount: 0,
           totalCoupons: 0,
-<<<<<<< HEAD
           unpaidCount: 0,
-=======
-          returnedCoupons: 0,
->>>>>>> d0a35a3 (Update)
           dailyAmount,
           totalAmount: 0,
         });
@@ -176,11 +156,7 @@ export const exportPaymentInputToExcel = async (
       bulk.contractRef,
       bulk.paymentCount,
       bulk.totalCoupons,
-<<<<<<< HEAD
       bulk.unpaidCount,
-=======
-      bulk.returnedCoupons || 0,
->>>>>>> d0a35a3 (Update)
       bulk.dailyAmount,
       bulk.totalAmount,
     ];
@@ -190,20 +166,10 @@ export const exportPaymentInputToExcel = async (
     dataRow.eachCell((cell, colNumber) => {
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 
-<<<<<<< HEAD
       if ([4, 5, 6].includes(colNumber)) {
         cell.numFmt = '#,##0';
         cell.alignment = { horizontal: 'center' };
       } else if ([7, 8].includes(colNumber)) {
-=======
-      // Format numeric and currency columns
-      if ([4, 5, 6].includes(colNumber)) {
-        // paymentCount, totalCoupons (Kupon Bawa), returnedCoupons (Kupon Pulang)
-        cell.numFmt = '#,##0';
-        cell.alignment = { horizontal: 'center' };
-      } else if ([7, 8].includes(colNumber)) {
-        // Angsuran and Total Tertagih
->>>>>>> d0a35a3 (Update)
         cell.numFmt = '"Rp "#,##0';
         cell.alignment = { horizontal: 'right' };
       }
@@ -228,19 +194,11 @@ export const exportPaymentInputToExcel = async (
       cell.font = { bold: true };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E2F3' } };
       cell.border = { top: { style: 'double' }, bottom: { style: 'double' }, left: { style: 'thin' }, right: { style: 'thin' } };
-<<<<<<< HEAD
 
       if ([4, 5, 6].includes(colNumber)) {
         cell.numFmt = '#,##0';
         cell.alignment = { horizontal: 'center' };
       } else if ([7, 8].includes(colNumber)) {
-=======
-      
-      if ([4, 5, 6].includes(colNumber)) {
-        cell.numFmt = '#,##0';
-        cell.alignment = { horizontal: 'center' };
-      } else if ([8].includes(colNumber)) {
->>>>>>> d0a35a3 (Update)
         cell.numFmt = '"Rp "#,##0';
         cell.alignment = { horizontal: 'right' };
       }

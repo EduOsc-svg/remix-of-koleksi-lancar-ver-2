@@ -47,7 +47,10 @@ import { StatCard } from "@/components/dashboard/StatCard";
 import { CollectionTrendChart } from "@/components/dashboard/CollectionTrendChart";
 import { ReturnedLossDetailDialog } from "@/components/dashboard/ReturnedLossDetailDialog";
 import { OutstandingDetailDialog } from "@/components/dashboard/OutstandingDetailDialog";
+import { MacetDetailDialog } from "@/components/dashboard/MacetDetailDialog";
+import { OmsetDetailDialog } from "@/components/dashboard/OmsetDetailDialog";
 import { useOutstandingDetailsMonthly, useOutstandingDetailsYearly } from "@/hooks/useOutstandingDetails";
+import { useOmsetDetailsMonthly, useOmsetDetailsYearly } from "@/hooks/useOmsetDetails";
 import { useCollectorSalaryTotal, useCollectorSalaryTotalYearly } from "@/hooks/useCollectorSalaries";
 import { YEARLY_BONUS_PERCENTAGE } from "@/hooks/useCommissionTiers";
 import { toast } from "sonner";
@@ -62,6 +65,10 @@ export default function Dashboard() {
   const [lossDetailScope, setLossDetailScope] = useState<'monthly' | 'yearly'>('monthly');
   const [outstandingDetailOpen, setOutstandingDetailOpen] = useState(false);
   const [outstandingDetailScope, setOutstandingDetailScope] = useState<'monthly' | 'yearly'>('monthly');
+  const [macetDetailOpen, setMacetDetailOpen] = useState(false);
+  const [macetDetailScope, setMacetDetailScope] = useState<'monthly' | 'yearly'>('monthly');
+  const [omsetDetailOpen, setOmsetDetailOpen] = useState(false);
+  const [omsetDetailScope, setOmsetDetailScope] = useState<'monthly' | 'yearly'>('monthly');
   const [newExpense, setNewExpense] = useState<OperationalExpenseInput>({
     expense_date: format(new Date(), 'yyyy-MM-dd'),
     description: '',
@@ -82,6 +89,8 @@ export default function Dashboard() {
   const { data: macetSummaryYearly } = useMacetSummaryYearly(selectedYear);
   const { data: outstandingMonthly } = useOutstandingDetailsMonthly(selectedMonth);
   const { data: outstandingYearly } = useOutstandingDetailsYearly(selectedYear);
+  const { data: omsetMonthly } = useOmsetDetailsMonthly(selectedMonth);
+  const { data: omsetYearly } = useOmsetDetailsYearly(selectedYear);
   const { createExpense, deleteExpense } = useOperationalExpenseMutations();
   const collectorSalaryTotal = useCollectorSalaryTotal(selectedMonth);
   const collectorSalaryTotalYearly = useCollectorSalaryTotalYearly(selectedYear);
@@ -272,6 +281,7 @@ export default function Dashboard() {
           value={contractTotals.total_omset}
           subtitle="Kontrak baru bulan ini"
           hoverInfo="Total omset (harga jual) dari semua kontrak yang dibuat bulan ini — diakui penuh saat kontrak terbit (accrual)."
+          onDetailClick={() => { setOmsetDetailScope('monthly'); setOmsetDetailOpen(true); }}
         />
 
         <StatCard
@@ -369,6 +379,7 @@ export default function Dashboard() {
           isNegative
           subtitle={`${macetSummary?.macet_count ?? 0} kontrak macet bulan ini`}
           hoverInfo={`Kontrak aktif berstatus MACET (telat pembayaran parah) dari kontrak yang dibuat bulan ini.\nJumlah kontrak: ${macetSummary?.macet_count ?? 0}\nModal nyangkut: ${formatRupiah(macetSummary?.total_modal_at_risk ?? 0)}\nSisa tagihan macet: ${formatRupiah(macetSummary?.total_outstanding ?? 0)}`}
+          onDetailClick={() => { setMacetDetailScope('monthly'); setMacetDetailOpen(true); }}
         />
       </div>
 
@@ -666,6 +677,7 @@ export default function Dashboard() {
                   value={contractTotalsYearly.total_omset}
                   subtitle={`Tahun ${selectedYear.getFullYear()}`}
                   hoverInfo={`Total: ${formatRupiah(yearlyFinancial?.total_omset ?? 0)} | ${yearlyFinancial?.contracts_count ?? 0} kontrak • Lancar: ${yearlyFinancial?.lancar_count ?? 0} | K.Lancar: ${yearlyFinancial?.kurang_lancar_count ?? 0} | Macet: ${yearlyFinancial?.macet_count ?? 0} | Lunas: ${yearlyFinancial?.completed_count ?? 0}`}
+                  onDetailClick={() => { setOmsetDetailScope('yearly'); setOmsetDetailOpen(true); }}
                 />
 
                 <StatCard
@@ -763,6 +775,7 @@ export default function Dashboard() {
                   isNegative
                   subtitle={`${macetSummaryYearly?.macet_count ?? 0} kontrak macet tahun ${selectedYear.getFullYear()}`}
                   hoverInfo={`Kontrak aktif berstatus MACET (telat pembayaran parah) dari kontrak yang dibuat tahun ${selectedYear.getFullYear()}.\nJumlah kontrak: ${macetSummaryYearly?.macet_count ?? 0}\nModal nyangkut: ${formatRupiah(macetSummaryYearly?.total_modal_at_risk ?? 0)}\nSisa tagihan macet: ${formatRupiah(macetSummaryYearly?.total_outstanding ?? 0)}`}
+                  onDetailClick={() => { setMacetDetailScope('yearly'); setMacetDetailOpen(true); }}
                 />
 
               </div>
@@ -1023,6 +1036,24 @@ export default function Dashboard() {
         ? `Detail Sisa Tagihan — ${format(selectedMonth, 'MMMM yyyy', { locale: idLocale })}`
         : `Detail Sisa Tagihan — Tahun ${selectedYear.getFullYear()}`}
       data={outstandingDetailScope === 'monthly' ? outstandingMonthly : outstandingYearly}
+    />
+
+    <MacetDetailDialog
+      open={macetDetailOpen}
+      onOpenChange={setMacetDetailOpen}
+      title={macetDetailScope === 'monthly'
+        ? `Detail Macet — ${format(selectedMonth, 'MMMM yyyy', { locale: idLocale })}`
+        : `Detail Macet — Tahun ${selectedYear.getFullYear()}`}
+      data={macetDetailScope === 'monthly' ? macetSummary : macetSummaryYearly}
+    />
+
+    <OmsetDetailDialog
+      open={omsetDetailOpen}
+      onOpenChange={setOmsetDetailOpen}
+      title={omsetDetailScope === 'monthly'
+        ? `Detail Omset — ${format(selectedMonth, 'MMMM yyyy', { locale: idLocale })}`
+        : `Detail Omset — Tahun ${selectedYear.getFullYear()}`}
+      data={omsetDetailScope === 'monthly' ? omsetMonthly : omsetYearly}
     />
     </>
   );

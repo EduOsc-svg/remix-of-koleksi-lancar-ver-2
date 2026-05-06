@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { Plus, Pencil, Trash2, Download, Eye, Settings, ChevronLeft, ChevronRight, Calendar, UserX } from "lucide-react";
-import { format, addMonths, subMonths, startOfMonth } from "date-fns";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Plus, Pencil, Trash2, Download, Eye, Settings, ChevronLeft, ChevronRight, Calendar, UserX, Users, FileText } from "lucide-react";
+import { format, addMonths, subMonths, startOfMonth, startOfYear, endOfMonth, endOfYear } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import ExcelJS from "exceljs";
 import { useTranslation } from "react-i18next";
@@ -55,6 +55,9 @@ import { SearchInput } from "@/components/ui/search-input";
 import { CommissionPaymentDialog } from "@/components/salesAgent/CommissionPaymentDialog";
 import { CommissionTiersDialog } from "@/components/salesAgent/CommissionTiersDialog";
 import { useCommissionTiers, calculateTieredCommission } from "@/hooks/useCommissionTiers";
+import { useContracts } from "@/hooks/useContracts";
+import { Card, CardContent } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export default function SalesAgents() {
   const { t } = useTranslation();
@@ -62,28 +65,75 @@ export default function SalesAgents() {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get('highlight');
   const { data: agents, isLoading } = useSalesAgents();
+  const { data: allContracts } = useContracts();
   const { data: agentOmsetData } = useAgentOmset();
   
   // Get URL parameters
-  const periodParam = 'monthly'; // Always monthly, removed yearly option
+  const periodTypeParam = (searchParams.get('periodType') as 'monthly' | 'yearly' | null) || 'monthly';
   const monthParam = searchParams.get('month');
+  const yearParam = searchParams.get('year');
   
   // Compute effective values (defaults for missing params)
   const effectiveMonth = monthParam || format(startOfMonth(new Date()), 'yyyy-MM');
+  const effectiveYear = yearParam || String(new Date().getFullYear());
 
   // resolve month for hooks
   const selectedMonthForHook = new Date(effectiveMonth);
+  const selectedYearForHook = new Date(parseInt(effectiveYear, 10), 0, 1);
 
   // Period range (yyyy-MM-dd) untuk filter pelanggan baru/lama agar selaras dengan periode
   const periodRange = (() => {
-    const start = format(startOfMonth(selectedMonthForHook), 'yyyy-MM-dd');
-    const end = format(new Date(selectedMonthForHook.getFullYear(), selectedMonthForHook.getMonth() + 1, 0), 'yyyy-MM-dd');
-    return { start, end };
+    if (periodTypeParam === 'yearly') {
+      return {
+        start: format(startOfYear(selectedYearForHook), 'yyyy-MM-dd'),
+        end: format(endOfYear(selectedYearForHook), 'yyyy-MM-dd'),
+      };
+    }
+    return {
+      start: format(startOfMonth(selectedMonthForHook), 'yyyy-MM-dd'),
+      end: format(endOfMonth(selectedMonthForHook), 'yyyy-MM-dd'),
+    };
   })();
 
   const { data: agentCustomerCounts } = useAgentCustomerCounts(periodRange.start, periodRange.end);
   const { data: monthlyData } = useMonthlyPerformance(selectedMonthForHook);
   const { data: commissionTiers } = useCommissionTiers();
+
+  // ===== Statistik kartu (mengikuti periode aktif) =====
+  const cardStats = useMemo(() => {
+    if (!allContracts) {
+      return { totalKontrak: 0, kontrakAktif: 0, kontrakTidakAktif: 0, totalKonsumen: 0, konsumenAktif: 0, konsumenTidakAktif: 0 };
+    }
+    const start = periodRange.start;
+    const end = periodRange.end;
+    const inPeriod = allContracts.filter((c: any) => {
+      if (!c.start_date) return false;
+      const d = String(c.start_date).slice(0, 10);
+      return d >= start && d <= end;
+    });
+    let kontrakAktif = 0;
+    let kontrakTidakAktif = 0;
+    const customerActiveMap = new Map<string, boolean>(); // true = punya kontrak aktif
+    inPeriod.forEach((c: any) => {
+      const isActive = c.status !== 'completed' && c.status !== 'returned';
+      if (isActive) kontrakAktif += 1; else kontrakTidakAktif += 1;
+      if (c.customer_id) {
+        const prev = customerActiveMap.get(c.customer_id) || false;
+        customerActiveMap.set(c.customer_id, prev || isActive);
+      }
+    });
+    let konsumenAktif = 0;
+    let konsumenTidakAktif = 0;
+    customerActiveMap.forEach((v) => { if (v) konsumenAktif += 1; else konsumenTidakAktif += 1; });
+    return {
+      totalKontrak: inPeriod.length,
+      kontrakAktif,
+      kontrakTidakAktif,
+      totalKonsumen: customerActiveMap.size,
+      konsumenAktif,
+      konsumenTidakAktif,
+    };
+  }, [allContracts, periodRange.start, periodRange.end]);
   const createAgent = useCreateSalesAgent();
   const updateAgent = useUpdateSalesAgent();
   const deleteAgent = useDeleteSalesAgent();
@@ -151,21 +201,17 @@ export default function SalesAgents() {
     const sp = new URLSearchParams(searchParams);
     let needsUpdate = false;
 
-    // Remove period parameter if it exists
-    if (sp.get('period')) {
-      sp.delete('period');
-      needsUpdate = true;
-    }
-
-    // Remove year parameter if it exists
-    if (sp.get('year')) {
-      sp.delete('year');
-      needsUpdate = true;
-    }
-
     // Ensure month is set
     if (!sp.get('month')) {
       sp.set('month', format(startOfMonth(new Date()), 'yyyy-MM'));
+      needsUpdate = true;
+    }
+    if (!sp.get('year')) {
+      sp.set('year', String(new Date().getFullYear()));
+      needsUpdate = true;
+    }
+    if (!sp.get('periodType')) {
+      sp.set('periodType', 'monthly');
       needsUpdate = true;
     }
 
@@ -234,6 +280,34 @@ export default function SalesAgents() {
   };
 
   const getAgentOmset = (agentId: string) => {
+    // Mode tahunan: agregasi langsung dari allContracts dalam tahun terpilih
+    if (isYearly && allContracts) {
+      const start = periodRange.start;
+      const end = periodRange.end;
+      const list = allContracts.filter((c: any) => {
+        if (c.sales_agent_id !== agentId) return false;
+        if (!c.start_date) return false;
+        if (c.status === 'returned') return false;
+        const d = String(c.start_date).slice(0, 10);
+        return d >= start && d <= end;
+      });
+      const total_omset = list.reduce((s: number, c: any) => s + Number(c.total_loan_amount || 0), 0);
+      const total_modal = list.reduce((s: number, c: any) => s + Number(c.omset || 0), 0);
+      const pct = total_omset > 0 && commissionTiers && commissionTiers.length > 0
+        ? calculateTieredCommission(total_omset, commissionTiers)
+        : 0;
+      const total_commission = (total_omset * pct) / 100;
+      return {
+        agent_id: agentId,
+        commission_percentage: pct,
+        total_omset,
+        total_modal,
+        total_contracts: list.length,
+        total_commission,
+        profit: total_omset - total_modal,
+      } as any;
+    }
+
     // Period-specific record dari hook yang sudah filter sesuai periode terpilih.
     // monthly: monthlyData.agents (kontrak start_date di bulan terpilih)
     let periodRecord: any = undefined;
@@ -569,9 +643,32 @@ export default function SalesAgents() {
     sp.set('month', format(targetDate, 'yyyy-MM'));
     setSearchParams(sp, { replace: true });
   };
-  const periodLabel = `${format(selectedMonthForHook, 'MMMM yyyy', { locale: idLocale })} (reset tgl 1)`;
-  const omsetColLabel = `Omset ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
-  const commissionColLabel = `Komisi ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
+
+  const shiftYear = (delta: number | null = null) => {
+    const sp = new URLSearchParams(searchParams);
+    let target: number;
+    if (delta === null) target = new Date().getFullYear();
+    else target = parseInt(effectiveYear, 10) + delta;
+    sp.set('year', String(target));
+    setSearchParams(sp, { replace: true });
+  };
+
+  const setPeriodType = (val: 'monthly' | 'yearly') => {
+    const sp = new URLSearchParams(searchParams);
+    sp.set('periodType', val);
+    setSearchParams(sp, { replace: true });
+  };
+
+  const isYearly = periodTypeParam === 'yearly';
+  const periodLabel = isYearly
+    ? `Tahun ${effectiveYear}`
+    : `${format(selectedMonthForHook, 'MMMM yyyy', { locale: idLocale })} (reset tgl 1)`;
+  const omsetColLabel = isYearly
+    ? `Omset ${effectiveYear}`
+    : `Omset ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
+  const commissionColLabel = isYearly
+    ? `Komisi ${effectiveYear}`
+    : `Komisi ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
 
   return (
     <div className="space-y-6">
@@ -595,18 +692,29 @@ export default function SalesAgents() {
         {/* Period selector card */}
         <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold">Periode Bulanan</span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">Periode {isYearly ? 'Tahunan' : 'Bulanan'}</span>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={periodTypeParam}
+                onValueChange={(v) => v && setPeriodType(v as 'monthly' | 'yearly')}
+                className="gap-1"
+              >
+                <ToggleGroupItem value="monthly" size="sm" className="text-xs px-3">Bulanan</ToggleGroupItem>
+                <ToggleGroupItem value="yearly" size="sm" className="text-xs px-3">Tahunan</ToggleGroupItem>
+              </ToggleGroup>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => shiftMonth(-1)}
-                  title="Bulan sebelumnya"
+                  onClick={() => isYearly ? shiftYear(-1) : shiftMonth(-1)}
+                  title={isYearly ? "Tahun sebelumnya" : "Bulan sebelumnya"}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -617,8 +725,8 @@ export default function SalesAgents() {
                   variant="outline"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => shiftMonth(1)}
-                  title="Bulan berikutnya"
+                  onClick={() => isYearly ? shiftYear(1) : shiftMonth(1)}
+                  title={isYearly ? "Tahun berikutnya" : "Bulan berikutnya"}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -626,17 +734,69 @@ export default function SalesAgents() {
                   variant="secondary"
                   size="sm"
                   className="ml-2"
-                  onClick={() => shiftMonth(null)}
+                  onClick={() => isYearly ? shiftYear(null) : shiftMonth(null)}
                 >
-                  Bulan Ini
+                  {isYearly ? 'Tahun Ini' : 'Bulan Ini'}
                 </Button>
               </div>
               <div className="text-xs text-muted-foreground text-right hidden md:block">
                 <p>Omset, komisi & pelanggan</p>
-                <p>mengikuti bulan terpilih (reset tiap tgl 1)</p>
+                <p>mengikuti {isYearly ? 'tahun' : 'bulan'} terpilih</p>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Stat cards (mengikuti periode aktif) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="h-4 w-4 text-blue-500" />
+                <span className="text-xs text-muted-foreground">Total Konsumen</span>
+              </div>
+              <p className="text-xl font-bold">{cardStats.totalKonsumen}</p>
+              <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="h-4 w-4 text-indigo-500" />
+                <span className="text-xs text-muted-foreground">Total Kontrak</span>
+              </div>
+              <p className="text-xl font-bold">{cardStats.totalKontrak}</p>
+              <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs text-muted-foreground">Konsumen Aktif / Tidak</span>
+              </div>
+              <p className="text-xl font-bold">
+                <span className="text-emerald-600">{cardStats.konsumenAktif}</span>
+                <span className="text-muted-foreground"> / </span>
+                <span className="text-rose-600">{cardStats.konsumenTidakAktif}</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Aktif vs lunas/return</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs text-muted-foreground">Kontrak Aktif / Tidak</span>
+              </div>
+              <p className="text-xl font-bold">
+                <span className="text-emerald-600">{cardStats.kontrakAktif}</span>
+                <span className="text-muted-foreground"> / </span>
+                <span className="text-rose-600">{cardStats.kontrakTidakAktif}</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Aktif vs lunas/return</p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Search and stats */}

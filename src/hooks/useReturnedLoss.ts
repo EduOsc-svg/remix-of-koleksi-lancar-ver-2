@@ -15,12 +15,14 @@ export interface ReturnedContractDetail {
   sales_name: string | null;
   sales_code: string | null;
   omset: number;
+  total_omset: number;
   collected_back: number;
   loss: number;
 }
 
 export interface ReturnedLossSummary {
   total_modal_loss: number;       // total modal yang ditanam pada kontrak return
+  total_omset: number;             // total nilai jual (total_loan_amount) kontrak return
   total_collected_back: number;    // total uang yg sempat tertagih dari kontrak return
   total_loss: number;              // modal - tertagih (kerugian bersih)
   returned_count: number;          // jumlah kontrak return
@@ -59,15 +61,18 @@ const fetchReturnedLoss = async (rangeStart: string, rangeEnd: string): Promise<
   }
 
   let total_modal_loss = 0;
+  let total_omset_all = 0;
   let total_collected_back = 0;
   const contracts: ReturnedContractDetail[] = [];
   const salesAgg = new Map<string, { sales_id: string | null; sales_name: string; sales_code: string | null; contract_count: number; total_omset: number; total_collected: number; total_loss: number }>();
 
   (returnedContracts || []).forEach((c: any) => {
     const omset = Number(c.omset || 0);
+    const totalOmset = Number(c.total_loan_amount || 0);
     const collected = collectedMap.get(c.id) || 0;
     const loss = Math.max(0, omset - collected);
     total_modal_loss += omset;
+    total_omset_all += totalOmset;
     total_collected_back += collected;
 
     const salesName = c.sales_agents?.name || '— Tanpa Sales —';
@@ -83,6 +88,7 @@ const fetchReturnedLoss = async (rangeStart: string, rangeEnd: string): Promise<
       sales_name: salesName,
       sales_code: salesCode,
       omset,
+      total_omset: totalOmset,
       collected_back: collected,
       loss,
     });
@@ -90,7 +96,7 @@ const fetchReturnedLoss = async (rangeStart: string, rangeEnd: string): Promise<
     const key = salesId || '__none__';
     const cur = salesAgg.get(key) || { sales_id: salesId, sales_name: salesName, sales_code: salesCode, contract_count: 0, total_omset: 0, total_collected: 0, total_loss: 0 };
     cur.contract_count += 1;
-    cur.total_omset += omset;
+    cur.total_omset += totalOmset;
     cur.total_collected += collected;
     cur.total_loss += loss;
     salesAgg.set(key, cur);
@@ -100,6 +106,7 @@ const fetchReturnedLoss = async (rangeStart: string, rangeEnd: string): Promise<
 
   return {
     total_modal_loss,
+    total_omset: total_omset_all,
     total_collected_back,
     total_loss,
     returned_count: (returnedContracts || []).length,
