@@ -26,6 +26,7 @@ import { formatAuditDetails } from "@/lib/formatAuditDetails";
 import { translateAuditDescription } from "@/lib/translateAuditDescription";
 import { Search, Shield, Info, Eye } from "lucide-react";
 import { SearchInput } from "@/components/ui/search-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Format currency values in description text
 const formatDescriptionWithCurrency = (description: string): string => {
@@ -60,18 +61,27 @@ export default function AuditLog() {
   const { t, i18n } = useTranslation();
   const { data: logs, isLoading } = useActivityLogs(500);
   const [searchTerm, setSearchTerm] = useState("");
+  const [actionFilter, setActionFilter] = useState<string>("all");
+  const [entityFilter, setEntityFilter] = useState<string>("all");
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [descriptionDialogOpen, setDescriptionDialogOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
 
+  // Daftar action & entity unik dari data untuk dropdown
+  const uniqueActions = Array.from(new Set((logs || []).map(l => l.action.toUpperCase()))).sort();
+  const uniqueEntities = Array.from(new Set((logs || []).map(l => l.entity_type))).sort();
+
   const filteredLogs = logs?.filter((log) => {
     const search = searchTerm.toLowerCase();
-    return (
+    const matchesSearch = !search || (
       log.user_name?.toLowerCase().includes(search) ||
       log.action.toLowerCase().includes(search) ||
       log.entity_type.toLowerCase().includes(search) ||
       log.description.toLowerCase().includes(search)
     );
+    const matchesAction = actionFilter === "all" || log.action.toUpperCase() === actionFilter;
+    const matchesEntity = entityFilter === "all" || log.entity_type === entityFilter;
+    return matchesSearch && matchesAction && matchesEntity;
   });
 
   const ITEMS_PER_PAGE = 10;
@@ -101,14 +111,40 @@ export default function AuditLog() {
           <CardTitle>{t("auditLog.activityHistory")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="mb-4">
-            <Label>{t("common.search")}</Label>
-            <SearchInput
-              value={searchTerm}
-              onChange={setSearchTerm}
-              placeholder={t("auditLog.searchPlaceholder")}
-              className="mt-1"
-            />
+          <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-1">
+              <Label>{t("common.search")}</Label>
+              <SearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder={t("auditLog.searchPlaceholder")}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Aksi</Label>
+              <Select value={actionFilter} onValueChange={setActionFilter}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Semua aksi" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Aksi</SelectItem>
+                  {uniqueActions.map(a => (
+                    <SelectItem key={a} value={a}>{a}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Entitas</Label>
+              <Select value={entityFilter} onValueChange={setEntityFilter}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Semua entitas" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Entitas</SelectItem>
+                  {uniqueEntities.map(e => (
+                    <SelectItem key={e} value={e} className="capitalize">{e}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="border rounded-lg">
