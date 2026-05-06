@@ -664,18 +664,29 @@ export default function SalesAgents() {
         {/* Period selector card */}
         <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold">Periode Bulanan</span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">Periode {isYearly ? 'Tahunan' : 'Bulanan'}</span>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={periodTypeParam}
+                onValueChange={(v) => v && setPeriodType(v as 'monthly' | 'yearly')}
+                className="gap-1"
+              >
+                <ToggleGroupItem value="monthly" size="sm" className="text-xs px-3">Bulanan</ToggleGroupItem>
+                <ToggleGroupItem value="yearly" size="sm" className="text-xs px-3">Tahunan</ToggleGroupItem>
+              </ToggleGroup>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => shiftMonth(-1)}
-                  title="Bulan sebelumnya"
+                  onClick={() => isYearly ? shiftYear(-1) : shiftMonth(-1)}
+                  title={isYearly ? "Tahun sebelumnya" : "Bulan sebelumnya"}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -686,8 +697,8 @@ export default function SalesAgents() {
                   variant="outline"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => shiftMonth(1)}
-                  title="Bulan berikutnya"
+                  onClick={() => isYearly ? shiftYear(1) : shiftMonth(1)}
+                  title={isYearly ? "Tahun berikutnya" : "Bulan berikutnya"}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -695,17 +706,69 @@ export default function SalesAgents() {
                   variant="secondary"
                   size="sm"
                   className="ml-2"
-                  onClick={() => shiftMonth(null)}
+                  onClick={() => isYearly ? shiftYear(null) : shiftMonth(null)}
                 >
-                  Bulan Ini
+                  {isYearly ? 'Tahun Ini' : 'Bulan Ini'}
                 </Button>
               </div>
               <div className="text-xs text-muted-foreground text-right hidden md:block">
                 <p>Omset, komisi & pelanggan</p>
-                <p>mengikuti bulan terpilih (reset tiap tgl 1)</p>
+                <p>mengikuti {isYearly ? 'tahun' : 'bulan'} terpilih</p>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Stat cards (mengikuti periode aktif) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="h-4 w-4 text-blue-500" />
+                <span className="text-xs text-muted-foreground">Total Konsumen</span>
+              </div>
+              <p className="text-xl font-bold">{cardStats.totalKonsumen}</p>
+              <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="h-4 w-4 text-indigo-500" />
+                <span className="text-xs text-muted-foreground">Total Kontrak</span>
+              </div>
+              <p className="text-xl font-bold">{cardStats.totalKontrak}</p>
+              <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs text-muted-foreground">Konsumen Aktif / Tidak</span>
+              </div>
+              <p className="text-xl font-bold">
+                <span className="text-emerald-600">{cardStats.konsumenAktif}</span>
+                <span className="text-muted-foreground"> / </span>
+                <span className="text-rose-600">{cardStats.konsumenTidakAktif}</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Aktif vs lunas/return</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs text-muted-foreground">Kontrak Aktif / Tidak</span>
+              </div>
+              <p className="text-xl font-bold">
+                <span className="text-emerald-600">{cardStats.kontrakAktif}</span>
+                <span className="text-muted-foreground"> / </span>
+                <span className="text-rose-600">{cardStats.kontrakTidakAktif}</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Aktif vs lunas/return</p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Search and stats */}
