@@ -201,21 +201,17 @@ export default function SalesAgents() {
     const sp = new URLSearchParams(searchParams);
     let needsUpdate = false;
 
-    // Remove period parameter if it exists
-    if (sp.get('period')) {
-      sp.delete('period');
-      needsUpdate = true;
-    }
-
-    // Remove year parameter if it exists
-    if (sp.get('year')) {
-      sp.delete('year');
-      needsUpdate = true;
-    }
-
     // Ensure month is set
     if (!sp.get('month')) {
       sp.set('month', format(startOfMonth(new Date()), 'yyyy-MM'));
+      needsUpdate = true;
+    }
+    if (!sp.get('year')) {
+      sp.set('year', String(new Date().getFullYear()));
+      needsUpdate = true;
+    }
+    if (!sp.get('periodType')) {
+      sp.set('periodType', 'monthly');
       needsUpdate = true;
     }
 
