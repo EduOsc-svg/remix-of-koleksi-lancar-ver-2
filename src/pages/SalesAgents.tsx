@@ -280,6 +280,34 @@ export default function SalesAgents() {
   };
 
   const getAgentOmset = (agentId: string) => {
+    // Mode tahunan: agregasi langsung dari allContracts dalam tahun terpilih
+    if (isYearly && allContracts) {
+      const start = periodRange.start;
+      const end = periodRange.end;
+      const list = allContracts.filter((c: any) => {
+        if (c.sales_agent_id !== agentId) return false;
+        if (!c.start_date) return false;
+        if (c.status === 'returned') return false;
+        const d = String(c.start_date).slice(0, 10);
+        return d >= start && d <= end;
+      });
+      const total_omset = list.reduce((s: number, c: any) => s + Number(c.total_loan_amount || 0), 0);
+      const total_modal = list.reduce((s: number, c: any) => s + Number(c.omset || 0), 0);
+      const pct = total_omset > 0 && commissionTiers && commissionTiers.length > 0
+        ? calculateTieredCommission(total_omset, commissionTiers)
+        : 0;
+      const total_commission = (total_omset * pct) / 100;
+      return {
+        agent_id: agentId,
+        commission_percentage: pct,
+        total_omset,
+        total_modal,
+        total_contracts: list.length,
+        total_commission,
+        profit: total_omset - total_modal,
+      } as any;
+    }
+
     // Period-specific record dari hook yang sudah filter sesuai periode terpilih.
     // monthly: monthlyData.agents (kontrak start_date di bulan terpilih)
     let periodRecord: any = undefined;
