@@ -65,28 +65,75 @@ export default function SalesAgents() {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get('highlight');
   const { data: agents, isLoading } = useSalesAgents();
+  const { data: allContracts } = useContracts();
   const { data: agentOmsetData } = useAgentOmset();
   
   // Get URL parameters
-  const periodParam = 'monthly'; // Always monthly, removed yearly option
+  const periodTypeParam = (searchParams.get('periodType') as 'monthly' | 'yearly' | null) || 'monthly';
   const monthParam = searchParams.get('month');
+  const yearParam = searchParams.get('year');
   
   // Compute effective values (defaults for missing params)
   const effectiveMonth = monthParam || format(startOfMonth(new Date()), 'yyyy-MM');
+  const effectiveYear = yearParam || String(new Date().getFullYear());
 
   // resolve month for hooks
   const selectedMonthForHook = new Date(effectiveMonth);
+  const selectedYearForHook = new Date(parseInt(effectiveYear, 10), 0, 1);
 
   // Period range (yyyy-MM-dd) untuk filter pelanggan baru/lama agar selaras dengan periode
   const periodRange = (() => {
-    const start = format(startOfMonth(selectedMonthForHook), 'yyyy-MM-dd');
-    const end = format(new Date(selectedMonthForHook.getFullYear(), selectedMonthForHook.getMonth() + 1, 0), 'yyyy-MM-dd');
-    return { start, end };
+    if (periodTypeParam === 'yearly') {
+      return {
+        start: format(startOfYear(selectedYearForHook), 'yyyy-MM-dd'),
+        end: format(endOfYear(selectedYearForHook), 'yyyy-MM-dd'),
+      };
+    }
+    return {
+      start: format(startOfMonth(selectedMonthForHook), 'yyyy-MM-dd'),
+      end: format(endOfMonth(selectedMonthForHook), 'yyyy-MM-dd'),
+    };
   })();
 
   const { data: agentCustomerCounts } = useAgentCustomerCounts(periodRange.start, periodRange.end);
   const { data: monthlyData } = useMonthlyPerformance(selectedMonthForHook);
   const { data: commissionTiers } = useCommissionTiers();
+
+  // ===== Statistik kartu (mengikuti periode aktif) =====
+  const cardStats = useMemo(() => {
+    if (!allContracts) {
+      return { totalKontrak: 0, kontrakAktif: 0, kontrakTidakAktif: 0, totalKonsumen: 0, konsumenAktif: 0, konsumenTidakAktif: 0 };
+    }
+    const start = periodRange.start;
+    const end = periodRange.end;
+    const inPeriod = allContracts.filter((c: any) => {
+      if (!c.start_date) return false;
+      const d = String(c.start_date).slice(0, 10);
+      return d >= start && d <= end;
+    });
+    let kontrakAktif = 0;
+    let kontrakTidakAktif = 0;
+    const customerActiveMap = new Map<string, boolean>(); // true = punya kontrak aktif
+    inPeriod.forEach((c: any) => {
+      const isActive = c.status !== 'completed' && c.status !== 'returned';
+      if (isActive) kontrakAktif += 1; else kontrakTidakAktif += 1;
+      if (c.customer_id) {
+        const prev = customerActiveMap.get(c.customer_id) || false;
+        customerActiveMap.set(c.customer_id, prev || isActive);
+      }
+    });
+    let konsumenAktif = 0;
+    let konsumenTidakAktif = 0;
+    customerActiveMap.forEach((v) => { if (v) konsumenAktif += 1; else konsumenTidakAktif += 1; });
+    return {
+      totalKontrak: inPeriod.length,
+      kontrakAktif,
+      kontrakTidakAktif,
+      totalKonsumen: customerActiveMap.size,
+      konsumenAktif,
+      konsumenTidakAktif,
+    };
+  }, [allContracts, periodRange.start, periodRange.end]);
   const createAgent = useCreateSalesAgent();
   const updateAgent = useUpdateSalesAgent();
   const deleteAgent = useDeleteSalesAgent();
