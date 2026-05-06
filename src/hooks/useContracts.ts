@@ -86,7 +86,7 @@ export const useCreateContract = () => {
         entity_id: result.data.id,
         description: `Created contract ${result.data.contract_ref} with loan amount ${result.data.total_loan_amount}`,
         contract_id: result.data.id,
-        details: {
+        details: ({
           contract_ref: d.contract_ref as string,
           customer_name: d.customers?.name ?? null,
           customer_phone: d.customers?.phone ?? null,
@@ -99,7 +99,7 @@ export const useCreateContract = () => {
           daily_installment_amount: d.daily_installment_amount as number,
           start_date: d.start_date as string,
           status: d.status as string,
-        },
+        }) as unknown as Json,
       });
     },
   });
@@ -154,14 +154,14 @@ export const useUpdateContract = () => {
         entity_id: data.id,
         description: `Updated contract ${data.contract_ref}`,
         contract_id: data.id,
-        details: {
+        details: ({
           contract_ref: d.contract_ref as string,
           customer_name: d.customers?.name ?? null,
           sales_agent: d.sales_agents ? `${d.sales_agents.name} (${d.sales_agents.agent_code})` : null,
           collector: d.collectors ? `${d.collectors.name} (${d.collectors.collector_code})` : null,
           changes: Object.keys(changes).length ? changes : null,
           ...(_note ? { note: _note } : {}),
-        },
+        }) as unknown as Json,
       });
     },
   });
@@ -222,7 +222,7 @@ export const useDeleteContract = () => {
         entity_type: 'contract',
         entity_id: data.id,
         description: `Deleted contract ${(c?.contract_ref as string) || data.id}`,
-        details: {
+        details: ({
           contract_ref: (c?.contract_ref as string) ?? null,
           customer_name: c?.customers?.name ?? null,
           customer_phone: c?.customers?.phone ?? null,
@@ -236,7 +236,7 @@ export const useDeleteContract = () => {
           start_date: (c?.start_date as string) ?? null,
           status: (c?.status as string) ?? null,
           ...(data._note ? { note: data._note } : {}),
-        },
+        }) as unknown as Json,
       });
     },
   });
