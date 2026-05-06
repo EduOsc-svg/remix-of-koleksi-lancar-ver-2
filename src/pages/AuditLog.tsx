@@ -289,7 +289,7 @@ export default function AuditLog() {
 
       {/* Description Modal */}
       <Dialog open={descriptionDialogOpen} onOpenChange={setDescriptionDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
@@ -297,7 +297,7 @@ export default function AuditLog() {
             </DialogTitle>
           </DialogHeader>
           {selectedLog && (
-            <div className="space-y-4">
+            <div className="space-y-4 flex-1 overflow-y-auto pr-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Badge className={getActionColor(selectedLog.action)}>{selectedLog.action}</Badge>
                 <span>•</span>
@@ -308,6 +308,67 @@ export default function AuditLog() {
               <div className="bg-muted/50 rounded-lg p-4">
                 <p className="text-sm whitespace-pre-wrap">{formatDescriptionWithCurrency(translateAuditDescription(selectedLog.description, i18n.language))}</p>
               </div>
+              {(() => {
+                const renderKV = (entries: { key: string; value: string }[], title: string) => (
+                  entries.length === 0 ? null : (
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</p>
+                      <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                        {entries.map(({ key, value }, idx) => (
+                          <div key={idx} className="flex justify-between gap-4 text-sm border-b border-border/50 last:border-0 pb-1 last:pb-0">
+                            <span className="text-muted-foreground">{key}:</span>
+                            <span className="font-medium text-right break-words">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                );
+                const d = selectedLog.details as Record<string, unknown> | null;
+                if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+
+                // Khusus kontrak: tampilkan detail terstruktur
+                const isContract = selectedLog.entity_type?.toLowerCase() === 'contract' || selectedLog.entity_type?.toLowerCase() === 'kontrak';
+
+                const sections: React.ReactNode[] = [];
+
+                // Changes (UPDATE)
+                const changes = d.changes as Record<string, { from: unknown; to: unknown }> | undefined;
+                if (changes && typeof changes === 'object') {
+                  const changeEntries = Object.entries(changes).flatMap(([k, v]) => {
+                    const fromVal = formatAuditDetails({ [k]: v?.from } as Json)[0]?.value ?? '-';
+                    const toVal = formatAuditDetails({ [k]: v?.to } as Json)[0]?.value ?? '-';
+                    return [{ key: formatAuditDetails({ [k]: '' } as Json)[0]?.key ?? k, value: `${fromVal}  →  ${toVal}` }];
+                  });
+                  sections.push(<div key="changes">{renderKV(changeEntries, 'Perubahan')}</div>);
+                }
+
+                // Before snapshot (UPDATE)
+                const before = d.before as Json | undefined;
+                if (before && typeof before === 'object') {
+                  sections.push(<div key="before">{renderKV(formatAuditDetails(before), 'Data Sebelum')}</div>);
+                }
+
+                // Contract data snapshot (DELETE)
+                const contractData = (d.contractData ?? d.contract_data) as Json | undefined;
+                if (contractData && typeof contractData === 'object') {
+                  sections.push(<div key="cdata">{renderKV(formatAuditDetails(contractData), 'Data Kontrak')}</div>);
+                }
+
+                // Top-level details (CREATE / fallback) - exclude special keys & note
+                const excluded = new Set(['note', 'changes', 'before', 'contractData', 'contract_data']);
+                const flat: Json = Object.fromEntries(
+                  Object.entries(d).filter(([k, v]) => !excluded.has(k) && v !== null && v !== undefined && typeof v !== 'object')
+                ) as Json;
+                const flatEntries = formatAuditDetails(flat);
+                if (flatEntries.length > 0) {
+                  sections.unshift(
+                    <div key="flat">{renderKV(flatEntries, isContract ? 'Detail Kontrak' : 'Detail')}</div>
+                  );
+                }
+
+                return sections.length > 0 ? <div className="space-y-3">{sections}</div> : null;
+              })()}
               {(() => {
                 const d = selectedLog.details as { note?: string } | null;
                 const note = d && typeof d === 'object' && !Array.isArray(d) ? d.note : null;
