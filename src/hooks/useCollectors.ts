@@ -1,0 +1,121 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useLogActivity } from './useActivityLog';
+import { saveToCache, loadFromCache } from '@/lib/queryCache';
+
+export interface Collector {
+  id: string;
+  collector_code: string;
+  name: string;
+  phone: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export const useCollectors = () => {
+  const queryKey = ['collectors'];
+  return useQuery({
+    queryKey,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('collectors')
+        .select('*')
+        .order('collector_code');
+      if (error) throw error;
+      const result = data as Collector[];
+      saveToCache(queryKey, result);
+      return result;
+    },
+    initialData: () => loadFromCache<Collector[]>(queryKey),
+    initialDataUpdatedAt: 0,
+  });
+};
+
+export const useCreateCollector = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+  
+  return useMutation({
+    mutationFn: async (collector: Omit<Collector, 'id' | 'created_at' | 'is_active'> & { is_active?: boolean }) => {
+      const { data, error } = await supabase
+        .from('collectors')
+        .insert(collector)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['collectors'] });
+      
+      logActivity.mutate({
+        action: 'CREATE',
+        entity_type: 'collector',
+        entity_id: data.id,
+        description: `Created collector ${data.name} (${data.collector_code})`,
+      });
+    },
+  });
+};
+
+export const useUpdateCollector = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+
+  return useMutation({
+    mutationFn: async ({ id, _note, ...collector }: Partial<Collector> & { id: string; _note?: string }) => {
+      const { data, error } = await supabase
+        .from('collectors')
+        .update(collector)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, _note };
+    },
+    onSuccess: ({ data, _note }) => {
+      queryClient.invalidateQueries({ queryKey: ['collectors'] });
+
+      logActivity.mutate({
+        action: 'UPDATE',
+        entity_type: 'collector',
+        entity_id: data.id,
+        description: `Updated collector ${data.name}`,
+        details: _note ? { note: _note } : null,
+      });
+    },
+  });
+};
+
+export const useDeleteCollector = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+
+  return useMutation({
+    mutationFn: async ({ id, _note }: { id: string; _note?: string }) => {
+      const { data: collectorData } = await supabase
+        .from('collectors')
+        .select('name, collector_code')
+        .eq('id', id)
+        .single();
+
+      const { error } = await supabase
+        .from('collectors')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return { id, name: collectorData?.name, collector_code: collectorData?.collector_code, _note };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['collectors'] });
+
+      logActivity.mutate({
+        action: 'DELETE',
+        entity_type: 'collector',
+        entity_id: data.id,
+        description: `Deleted collector ${data.name || data.id}`,
+        details: data._note ? { note: data._note } : null,
+      });
+    },
+  });
+};

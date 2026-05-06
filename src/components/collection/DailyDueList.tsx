@@ -1,0 +1,439 @@
+import { useMemo, useState } from "react";
+import { CalendarClock, CheckCircle2, AlertTriangle, Wallet } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { toast } from "sonner";
+import { formatRupiah } from "@/lib/format";
+import { useCouponHandovers, type CouponHandover } from "@/hooks/useCouponHandovers";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useLogActivity } from "@/hooks/useActivityLog";
+
+/**
+ * DailyDueList — Sinkron dengan tab "Belum Bayar".
+ *
+ * Sumber data: `coupon_handovers` (kupon yang sudah keluar/diserahterimakan ke kolektor).
+ * "Kupon hari ini" = jumlah kupon yang masih BELUM LUNAS dari setiap batch handover
+ * (unpaidInRange = coupon_count - paidInRange, di mana paidInRange dihitung
+ * berdasarkan `credit_contracts.current_installment_index`).
+ *
+ * Logika pembayaran:
+ *  - Default Kupon Kembali = 0 → semua kupon outstanding dianggap LUNAS.
+ *  - Kupon yang ditandai kembali tetap UNPAID & muncul di "Belum Bayar".
+ *  - Pelanggan yang sudah lunas (unpaidInRange = 0) otomatis HILANG dari daftar.
+ */
+
+interface DueRow {
+  handover_id: string;
+  contract_id: string;
+  contract_ref: string;
+  customer_name: string;
+  collector_id: string | null;
+  collector_name: string | null;
+  daily_amount: number;
+  start_index: number;
+  end_index: number;
+  current_installment_index: number;
+  paid_count: number;
+  unpaid_count: number;
+  // installment indices (1-based) yang masih outstanding pada batch ini
+  unpaid_indices: number[];
+}
+
+function buildRow(h: CouponHandover): DueRow | null {
+  if (!h.credit_contracts) return null;
+  const currentIndex = h.credit_contracts.current_installment_index || 0;
+  const paidInRange = Math.max(
+    0,
+    Math.min(currentIndex, h.end_index) - h.start_index + 1,
+  );
+  const paid = Math.max(0, paidInRange);
+  const unpaid = h.coupon_count - paid;
+  if (unpaid <= 0) return null;
+
+  // Kupon outstanding = index dari max(start_index, currentIndex+1) sampai end_index
+  const firstUnpaid = Math.max(h.start_index, currentIndex + 1);
+  const indices: number[] = [];
+  for (let i = firstUnpaid; i <= h.end_index; i++) indices.push(i);
+
+  return {
+    handover_id: h.id,
+    contract_id: h.contract_id,
+    contract_ref: h.credit_contracts.contract_ref,
+    customer_name: h.credit_contracts.customers?.name || "-",
+    collector_id: h.collector_id,
+    collector_name: h.collectors?.name || null,
+    daily_amount: h.credit_contracts.daily_installment_amount,
+    start_index: h.start_index,
+    end_index: h.end_index,
+    current_installment_index: currentIndex,
+    paid_count: paid,
+    unpaid_count: unpaid,
+    unpaid_indices: indices,
+  };
+}
+
+export function DailyDueList() {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+  const { data: handovers, isLoading } = useCouponHandovers();
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Build rows dari semua handover yang masih outstanding
+  const rows = useMemo(() => {
+    return (handovers || [])
+      .map(buildRow)
+      .filter((r): r is DueRow => r !== null);
+  }, [handovers]);
+
+  const filteredRows = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        r.customer_name.toLowerCase().includes(q) ||
+        r.contract_ref.toLowerCase().includes(q) ||
+        (r.collector_name || "").toLowerCase().includes(q),
+    );
+  }, [rows, searchQuery]);
+
+  // Dialog state
+  const [selected, setSelected] = useState<DueRow | null>(null);
+  const [returnedCount, setReturnedCount] = useState<number>(0);
+  const [submitting, setSubmitting] = useState(false);
+
+  const openDialog = (row: DueRow) => {
+    setSelected(row);
+    setReturnedCount(0);
+  };
+  const closeDialog = () => {
+    setSelected(null);
+    setReturnedCount(0);
+  };
+
+  const handleSubmit = async () => {
+    if (!selected) return;
+    const total = selected.unpaid_count;
+    const returned = Math.max(0, Math.min(returnedCount, total));
+    const paidCount = total - returned;
+
+    // Bayar kupon dari index TERAWAL — sisakan `returned` kupon di akhir sebagai outstanding.
+    const toPayIndices = selected.unpaid_indices.slice(0, paidCount);
+
+    setSubmitting(true);
+    try {
+      if (toPayIndices.length > 0) {
+        const today = new Date().toISOString().split("T")[0];
+
+        // 1) Insert payment_logs
+        const payments = toPayIndices.map((idx) => ({
+          contract_id: selected.contract_id,
+          payment_date: today,
+          installment_index: idx,
+          amount_paid: selected.daily_amount,
+          collector_id: selected.collector_id,
+          notes: `Pembayaran kupon ${idx} (batch ${selected.start_index}-${selected.end_index})`,
+        }));
+        const { error: payErr } = await supabase
+          .from("payment_logs")
+          .insert(payments);
+        if (payErr) throw payErr;
+
+        // 2) Update installment_coupons -> paid (jika ada record-nya)
+        const { error: couponErr } = await supabase
+          .from("installment_coupons")
+          .update({ status: "paid" })
+          .eq("contract_id", selected.contract_id)
+          .in("installment_index", toPayIndices);
+        if (couponErr) {
+          // non-fatal: tabel coupons mungkin tidak selalu lengkap; lanjut
+          console.warn("update installment_coupons:", couponErr.message);
+        }
+
+        // 3) Update credit_contracts.current_installment_index ke index tertinggi yang dibayar
+        const maxIndex = Math.max(...toPayIndices);
+        const { error: cErr } = await supabase
+          .from("credit_contracts")
+          .update({ current_installment_index: maxIndex })
+          .eq("id", selected.contract_id)
+          .lt("current_installment_index", maxIndex);
+        if (cErr) throw cErr;
+
+        logActivity.mutate({
+          action: "DAILY_COLLECTION",
+          entity_type: "payment",
+          entity_id: null,
+          description:
+            `Penagihan ${selected.contract_ref} (${selected.customer_name}) ` +
+            `batch ${selected.start_index}-${selected.end_index}: ` +
+            `${paidCount} kupon LUNAS, ${returned} kupon KEMBALI`,
+          contract_id: selected.contract_id,
+        });
+      } else {
+        logActivity.mutate({
+          action: "DAILY_COLLECTION",
+          entity_type: "payment",
+          entity_id: null,
+          description:
+            `Penagihan ${selected.contract_ref} (${selected.customer_name}) ` +
+            `batch ${selected.start_index}-${selected.end_index}: ` +
+            `0 kupon LUNAS, ${returned} kupon KEMBALI`,
+          contract_id: selected.contract_id,
+        });
+      }
+
+      // Refresh semua query terkait — agar tab Belum Bayar ikut sinkron
+      queryClient.invalidateQueries({ queryKey: ["coupon_handovers"] });
+      queryClient.invalidateQueries({ queryKey: ["installment_coupons"] });
+      queryClient.invalidateQueries({ queryKey: ["payment_logs"] });
+      queryClient.invalidateQueries({ queryKey: ["credit_contracts"] });
+      queryClient.invalidateQueries({ queryKey: ["outstanding_coupons"] });
+      queryClient.invalidateQueries({ queryKey: ["collection_trend"] });
+      queryClient.invalidateQueries({ queryKey: ["aggregated_payments"] });
+
+      toast.success(
+        `${selected.customer_name}: ${paidCount} lunas, ${returned} kembali`,
+      );
+      closeDialog();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Terjadi kesalahan";
+      toast.error(`Gagal mencatat penagihan: ${msg}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Total summary
+  const totalUnpaidCoupons = filteredRows.reduce((s, r) => s + r.unpaid_count, 0);
+  const totalUnpaidAmount = filteredRows.reduce(
+    (s, r) => s + r.unpaid_count * r.daily_amount,
+    0,
+  );
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CalendarClock className="h-5 w-5" />
+            Daftar Penagihan Hari Ini
+          </CardTitle>
+          <CardDescription>
+            Daftar pelanggan dengan kupon <strong>keluar</strong> (sudah diserahterimakan ke
+            kolektor) yang masih belum lunas. Sinkron dengan tab <strong>Belum Bayar</strong>.
+            Klik <strong>Bayar</strong> untuk mencatat hasil tagihan; pelanggan yang lunas
+            otomatis hilang dari daftar.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Cari pelanggan, kontrak, atau kolektor..."
+              className="max-w-md"
+            />
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-sm">
+                {filteredRows.length} batch
+              </Badge>
+              <Badge variant="outline" className="text-sm">
+                {totalUnpaidCoupons} kupon • {formatRupiah(totalUnpaidAmount)}
+              </Badge>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              Memuat daftar...
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                {searchQuery
+                  ? "Tidak ada pelanggan yang cocok dengan pencarian."
+                  : "Semua kupon yang sudah diserahterimakan sudah lunas. 🎉"}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <div className="rounded-md border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kode Kontrak</TableHead>
+                    <TableHead>Pelanggan</TableHead>
+                    <TableHead>Kolektor</TableHead>
+                    <TableHead className="text-center">Range Kupon</TableHead>
+                    <TableHead className="text-center">Outstanding</TableHead>
+                    <TableHead className="text-right">Total Tagihan</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredRows.map((row) => (
+                    <TableRow key={row.handover_id}>
+                      <TableCell className="font-mono text-sm">
+                        {row.contract_ref}
+                      </TableCell>
+                      <TableCell className="font-medium">{row.customer_name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {row.collector_name || "-"}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {row.start_index}-{row.end_index}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-destructive border-destructive/40">
+                          {row.unpaid_count} kupon
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {formatRupiah(row.daily_amount * row.unpaid_count)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          onClick={() => openDialog(row)}
+                          className="gap-1"
+                        >
+                          <Wallet className="h-3.5 w-3.5" />
+                          Bayar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Payment Dialog */}
+      <Dialog open={!!selected} onOpenChange={(o) => !o && closeDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              Catat Penagihan
+            </DialogTitle>
+            <DialogDescription>
+              {selected?.customer_name} • {selected?.contract_ref} • Batch{" "}
+              {selected?.start_index}-{selected?.end_index}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selected && (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Kupon outstanding:</span>
+                  <span className="font-semibold">{selected.unpaid_count} kupon</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Nominal per kupon:</span>
+                  <span className="font-semibold">{formatRupiah(selected.daily_amount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total tagihan:</span>
+                  <span className="font-bold text-primary">
+                    {formatRupiah(selected.daily_amount * selected.unpaid_count)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="returned-count" className="text-sm font-medium">
+                  Jumlah Kupon Kembali (Belum Terbayar)
+                </Label>
+                <Input
+                  id="returned-count"
+                  type="number"
+                  min={0}
+                  max={selected.unpaid_count}
+                  value={returnedCount}
+                  onChange={(e) =>
+                    setReturnedCount(
+                      Math.max(
+                        0,
+                        Math.min(
+                          selected.unpaid_count,
+                          parseInt(e.target.value) || 0,
+                        ),
+                      ),
+                    )
+                  }
+                  className="text-center font-semibold text-lg"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Default <strong>0</strong> = semua kupon outstanding dianggap LUNAS. Isi
+                  sesuai jumlah kupon yang dikembalikan kolektor (gagal tagih).
+                </p>
+              </div>
+
+              <Alert
+                className={
+                  returnedCount > 0
+                    ? "border-warning/40 bg-warning/5"
+                    : "border-primary/40 bg-primary/5"
+                }
+              >
+                {returnedCount > 0 ? (
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                )}
+                <AlertDescription className="ml-2 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Lunas:</span>
+                    <span className="font-semibold">
+                      {selected.unpaid_count - returnedCount} kupon (
+                      {formatRupiah(
+                        selected.daily_amount *
+                          (selected.unpaid_count - returnedCount),
+                      )}
+                      )
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Kembali (belum bayar):</span>
+                    <span className="font-semibold">
+                      {returnedCount} kupon (
+                      {formatRupiah(selected.daily_amount * returnedCount)})
+                    </span>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog} disabled={submitting}>
+              Batal
+            </Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? "Menyimpan..." : "Catat Penagihan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

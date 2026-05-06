@@ -1,0 +1,122 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useLogActivity } from './useActivityLog';
+
+export interface Customer {
+  id: string;
+  name: string;
+  nik: string | null;
+  address: string | null;
+  business_address: string | null;
+  phone: string | null;
+  created_at: string;
+}
+
+export interface CustomerWithRelations extends Customer {}
+
+export type CustomerCreateInput = Omit<Customer, 'id' | 'created_at' | 'assigned_sales_id'>;
+
+export const useCustomers = () => {
+  return useQuery({
+    queryKey: ['customers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      return data as CustomerWithRelations[];
+    },
+  });
+};
+
+export const useCreateCustomer = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+  
+  return useMutation({
+    mutationFn: async (customer: CustomerCreateInput) => {
+      const { data, error } = await supabase
+        .from('customers')
+        .insert(customer)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      
+      logActivity.mutate({
+        action: 'CREATE',
+        entity_type: 'customer',
+        entity_id: data.id,
+        description: `Created customer ${data.name}`,
+        customer_id: data.id,
+      });
+    },
+  });
+};
+
+export const useUpdateCustomer = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+
+  return useMutation({
+    mutationFn: async ({ id, _note, ...customer }: Partial<CustomerCreateInput> & { id: string; _note?: string }) => {
+      const { data, error } = await supabase
+        .from('customers')
+        .update(customer)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, _note };
+    },
+    onSuccess: ({ data, _note }) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+
+      logActivity.mutate({
+        action: 'UPDATE',
+        entity_type: 'customer',
+        entity_id: data.id,
+        description: `Updated customer ${data.name}`,
+        customer_id: data.id,
+        details: _note ? { note: _note } : null,
+      });
+    },
+  });
+};
+
+export const useDeleteCustomer = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+
+  return useMutation({
+    mutationFn: async ({ id, _note }: { id: string; _note?: string }) => {
+      const { data: customerData } = await supabase
+        .from('customers')
+        .select('name')
+        .eq('id', id)
+        .single();
+
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return { id, name: customerData?.name, _note };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+
+      logActivity.mutate({
+        action: 'DELETE',
+        entity_type: 'customer',
+        entity_id: data.id,
+        description: `Deleted customer ${data.name || data.id}`,
+        details: data._note ? { note: data._note } : null,
+      });
+    },
+  });
+};

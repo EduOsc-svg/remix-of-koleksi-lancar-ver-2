@@ -1,0 +1,137 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { z } from "zod";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Loader2, Home } from "lucide-react";
+
+// Validation schema
+const authSchema = z.object({
+  email: z.string().email("Email tidak valid"),
+  password: z.string().min(6, "Password minimal 6 karakter"),
+});
+
+export default function Auth() {
+  const navigate = useNavigate();
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+
+  // Check if already logged in via context
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate("/");
+    }
+  }, [isAuthenticated, authLoading, navigate]);
+
+  const validateForm = () => {
+    try {
+      authSchema.parse({ email, password });
+      setErrors({});
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const fieldErrors: { email?: string; password?: string } = {};
+        error.errors.forEach((err) => {
+          if (err.path[0] === "email") fieldErrors.email = err.message;
+          if (err.path[0] === "password") fieldErrors.password = err.message;
+        });
+        setErrors(fieldErrors);
+      }
+      return false;
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+          toast.error("Email atau password salah");
+        } else if (error.message.includes("Email not confirmed")) {
+          toast.error("Email belum dikonfirmasi. Cek inbox Anda.");
+        } else {
+          toast.error(error.message);
+        }
+        return;
+      }
+
+      toast.success("Login berhasil!");
+      navigate("/");
+    } catch (error) {
+      toast.error("Terjadi kesalahan saat login");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="flex justify-center mb-4">
+            <div className="p-3 bg-primary/10 rounded-full">
+              <Home className="h-8 w-8 text-primary" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl">CV Sumber Mutiara Elektronik</CardTitle>
+          <CardDescription>
+            Sistem Manajemen Kredit
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="login-email">Email</Label>
+              <Input
+                id="login-email"
+                type="email"
+                placeholder="admin@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
+              />
+              {errors.email && (
+                <p className="text-sm text-destructive">{errors.email}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password">Password</Label>
+              <Input
+                id="login-password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading}
+              />
+              {errors.password && (
+                <p className="text-sm text-destructive">{errors.password}</p>
+              )}
+            </div>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Login
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

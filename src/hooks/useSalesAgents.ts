@@ -1,0 +1,133 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useLogActivity } from './useActivityLog';
+import { saveToCache, loadFromCache } from '@/lib/queryCache';
+
+export interface SalesAgent {
+  id: string;
+  agent_code: string;
+  name: string;
+  phone: string | null;
+  commission_percentage: number | null;
+  use_tiered_commission: boolean;
+  monthly_omset: number;
+  monthly_commission: number;
+  last_monthly_reset: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export const useSalesAgents = () => {
+  const queryKey = ['sales_agents'];
+  return useQuery({
+    queryKey,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sales_agents')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      const result = data as SalesAgent[];
+      saveToCache(queryKey, result);
+      return result;
+    },
+    initialData: () => loadFromCache<SalesAgent[]>(queryKey),
+    initialDataUpdatedAt: 0,
+  });
+};
+
+export const useCreateSalesAgent = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+  
+  return useMutation({
+    mutationFn: async (agent: { agent_code: string; name: string; phone?: string }) => {
+      const { data, error } = await supabase
+        .from('sales_agents')
+        .insert({
+          agent_code: agent.agent_code,
+          name: agent.name,
+          phone: agent.phone || null,
+          use_tiered_commission: true, // Always use tiered commission
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sales_agents'] });
+      
+      logActivity.mutate({
+        action: 'CREATE',
+        entity_type: 'sales_agent',
+        entity_id: data.id,
+        description: `Created sales agent ${data.name} (${data.agent_code})`,
+        sales_agent_id: data.id,
+      });
+    },
+  });
+};
+
+export const useUpdateSalesAgent = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+
+  return useMutation({
+    mutationFn: async ({ id, _note, ...agent }: Partial<SalesAgent> & { id: string; _note?: string }) => {
+      const { data, error } = await supabase
+        .from('sales_agents')
+        .update(agent)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, _note };
+    },
+    onSuccess: ({ data, _note }) => {
+      queryClient.invalidateQueries({ queryKey: ['sales_agents'] });
+
+      logActivity.mutate({
+        action: 'UPDATE',
+        entity_type: 'sales_agent',
+        entity_id: data.id,
+        description: `Updated sales agent ${data.name}`,
+        sales_agent_id: data.id,
+        details: _note ? { note: _note } : null,
+      });
+    },
+  });
+};
+
+export const useDeleteSalesAgent = () => {
+  const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
+
+  return useMutation({
+    mutationFn: async ({ id, _note }: { id: string; _note?: string }) => {
+      const { data: agentData } = await supabase
+        .from('sales_agents')
+        .select('name, agent_code')
+        .eq('id', id)
+        .single();
+
+      const { error } = await supabase
+        .from('sales_agents')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return { id, name: agentData?.name, agent_code: agentData?.agent_code, _note };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sales_agents'] });
+
+      logActivity.mutate({
+        action: 'DELETE',
+        entity_type: 'sales_agent',
+        entity_id: data.id,
+        description: `Deleted sales agent ${data.name || data.id}`,
+        details: data._note ? { note: data._note } : null,
+      });
+    },
+  });
+};
