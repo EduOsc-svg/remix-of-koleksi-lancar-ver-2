@@ -615,9 +615,32 @@ export default function SalesAgents() {
     sp.set('month', format(targetDate, 'yyyy-MM'));
     setSearchParams(sp, { replace: true });
   };
-  const periodLabel = `${format(selectedMonthForHook, 'MMMM yyyy', { locale: idLocale })} (reset tgl 1)`;
-  const omsetColLabel = `Omset ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
-  const commissionColLabel = `Komisi ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
+
+  const shiftYear = (delta: number | null = null) => {
+    const sp = new URLSearchParams(searchParams);
+    let target: number;
+    if (delta === null) target = new Date().getFullYear();
+    else target = parseInt(effectiveYear, 10) + delta;
+    sp.set('year', String(target));
+    setSearchParams(sp, { replace: true });
+  };
+
+  const setPeriodType = (val: 'monthly' | 'yearly') => {
+    const sp = new URLSearchParams(searchParams);
+    sp.set('periodType', val);
+    setSearchParams(sp, { replace: true });
+  };
+
+  const isYearly = periodTypeParam === 'yearly';
+  const periodLabel = isYearly
+    ? `Tahun ${effectiveYear}`
+    : `${format(selectedMonthForHook, 'MMMM yyyy', { locale: idLocale })} (reset tgl 1)`;
+  const omsetColLabel = isYearly
+    ? `Omset ${effectiveYear}`
+    : `Omset ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
+  const commissionColLabel = isYearly
+    ? `Komisi ${effectiveYear}`
+    : `Komisi ${format(selectedMonthForHook, 'MMM yyyy', { locale: idLocale })}`;
 
   return (
     <div className="space-y-6">
