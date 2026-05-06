@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { Plus, Pencil, Trash2, Download, Eye, Settings, ChevronLeft, ChevronRight, Calendar, UserX } from "lucide-react";
-import { format, addMonths, subMonths, startOfMonth } from "date-fns";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Plus, Pencil, Trash2, Download, Eye, Settings, ChevronLeft, ChevronRight, Calendar, UserX, Users, FileText } from "lucide-react";
+import { format, addMonths, subMonths, startOfMonth, startOfYear, endOfMonth, endOfYear } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import ExcelJS from "exceljs";
 import { useTranslation } from "react-i18next";
@@ -55,6 +55,9 @@ import { SearchInput } from "@/components/ui/search-input";
 import { CommissionPaymentDialog } from "@/components/salesAgent/CommissionPaymentDialog";
 import { CommissionTiersDialog } from "@/components/salesAgent/CommissionTiersDialog";
 import { useCommissionTiers, calculateTieredCommission } from "@/hooks/useCommissionTiers";
+import { useContracts } from "@/hooks/useContracts";
+import { Card, CardContent } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export default function SalesAgents() {
   const { t } = useTranslation();
