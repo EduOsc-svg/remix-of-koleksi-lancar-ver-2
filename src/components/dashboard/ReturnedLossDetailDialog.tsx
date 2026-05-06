@@ -24,10 +24,14 @@ export function ReturnedLossDetailDialog({ open, onOpenChange, title, data }: Pr
 
         <div className="flex-1 overflow-y-auto space-y-6">
           {/* Ringkasan total */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">Jumlah Kontrak</p>
               <p className="text-lg font-bold">{data?.returned_count ?? 0}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-xs text-muted-foreground">Total Omset</p>
+              <p className="text-lg font-bold">{formatRupiah(data?.total_omset ?? 0)}</p>
             </div>
             <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">Total Modal Hilang</p>
@@ -121,7 +125,7 @@ export function ReturnedLossDetailDialog({ open, onOpenChange, title, data }: Pr
                             {c.sales_code ? `${c.sales_code} · ` : ''}{c.sales_name}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{formatRupiah(c.omset)}</TableCell>
+                        <TableCell className="text-right">{formatRupiah(c.total_omset)}</TableCell>
                         <TableCell className="text-right text-green-600">{formatRupiah(c.collected_back)}</TableCell>
                         <TableCell className="text-right text-destructive font-semibold">{formatRupiah(c.loss)}</TableCell>
                       </TableRow>
