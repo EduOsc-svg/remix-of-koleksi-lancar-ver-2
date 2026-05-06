@@ -23,6 +23,7 @@ import { useActivityLogs, ActivityLog } from "@/hooks/useActivityLog";
 import { usePagination } from "@/hooks/usePagination";
 import { TablePagination } from "@/components/TablePagination";
 import { formatAuditDetails } from "@/lib/formatAuditDetails";
+import type { Json } from "@/integrations/supabase/types";
 import { translateAuditDescription } from "@/lib/translateAuditDescription";
 import { Search, Shield, Info, Eye } from "lucide-react";
 import { SearchInput } from "@/components/ui/search-input";
