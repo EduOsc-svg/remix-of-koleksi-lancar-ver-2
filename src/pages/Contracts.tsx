@@ -431,7 +431,8 @@ export default function Contracts() {
           description: `Tuliskan alasan perubahan kontrak ${selectedContract.contract_ref}.`,
         });
         if (!note) return;
-        await updateContract.mutateAsync({
+        const prev = selectedContract;
+        const updateRes = await updateContract.mutateAsync({
           id: selectedContract.id,
           contract_ref: formData.contract_ref,
           customer_id: formData.customer_id,
@@ -446,6 +447,54 @@ export default function Contracts() {
           omset: Math.max(0, (formData.modal || 0) - (formData.dp || 0)),
           _note: note,
         } as any);
+
+        // Jika field yang mempengaruhi kupon berubah, regenerate kupon agar
+        // tampilan print/preview ikut diperbarui.
+        const couponAffectingChanged =
+          prev.tenor_days !== tenorDays ||
+          Number(prev.daily_installment_amount) !== Number(dailyAmount) ||
+          prev.start_date !== formData.start_date;
+
+        if (couponAffectingChanged) {
+          // Cek apakah sudah ada kupon yang dibayar — jangan regenerate jika ada
+          const { data: paidCoupons } = await supabase
+            .from('installment_coupons')
+            .select('id')
+            .eq('contract_id', selectedContract.id)
+            .eq('status', 'paid')
+            .limit(1);
+
+          if (paidCoupons && paidCoupons.length > 0) {
+            toast.warning(
+              "Kontrak diperbarui, namun kupon tidak di-regenerate karena sudah ada pembayaran."
+            );
+          } else {
+            // Hapus kupon lama lalu generate ulang dengan data terbaru
+            const { error: delErr } = await supabase
+              .from('installment_coupons')
+              .delete()
+              .eq('contract_id', selectedContract.id);
+            if (delErr) {
+              console.error('Gagal hapus kupon lama:', delErr);
+              toast.error('Gagal menghapus kupon lama untuk regenerate');
+            } else {
+              await generateCoupons.mutateAsync({
+                contractId: selectedContract.id,
+                startDate: formData.start_date,
+                tenorDays: tenorDays,
+                dailyAmount: dailyAmount,
+              });
+              queryClient.invalidateQueries({
+                queryKey: ['installment_coupons', 'contract', selectedContract.id],
+              });
+            }
+          }
+        }
+
+        // Refresh selectedContract di state lokal supaya preview/print pakai data baru
+        if (updateRes?.data) {
+          setSelectedContract(updateRes.data as ContractWithCustomer);
+        }
         toast.success("Kontrak berhasil diperbarui");
       } else {
         // CREATE KONTRAK
