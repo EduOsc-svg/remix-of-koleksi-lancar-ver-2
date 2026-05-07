@@ -1,200 +1,236 @@
 import ExcelJS from 'exceljs';
 import type { PaymentWithRelations } from '@/hooks/usePayments';
+import type { CouponHandover } from '@/hooks/useCouponHandovers';
 
-interface PaymentSummary {
+interface PaymentDetail {
   contractId: string;
   customerName: string;
   contractRef: string;
-  paymentCount: number;
-  totalCoupons: number;
+  startIndex: number;        // pembayaran ke (start)
+  endIndex: number;          // pembayaran ke (end)
+  couponCount: number;       // jumlah kupon (handover)
+  paidCount: number;         // kupon dibayar
   dailyAmount: number;
-  totalAmount: number;
+  totalAmount: number;       // tertagih (paidCount * dailyAmount)
+  status: 'lancar' | 'kurang_lancar' | 'macet' | 'lunas' | 'returned';
+  statusLabel: string;
 }
 
-interface CollectorPaymentGroup {
+interface CollectorGroup {
   collectorId: string;
   collectorName: string;
   collectorCode: string;
-  payments: PaymentSummary[];
-  totalPaymentCount: number;
-  totalCoupons: number;
-  totalAmount: number;
+  details: PaymentDetail[];
 }
 
 const HEADERS = [
-  'No', 'Konsumen', 'Kode Kontrak', 'Jumlah Pembayaran', 'Jumlah Kupon', 'Angsuran/Kupon (Rp)', 'Total Tertagih (Rp)'
+  'No', 'Konsumen', 'Kode Kontrak', 'Pembayaran ke', 'Jumlah Kupon', 'Kupon Dibayar', 'Angsuran/Kupon (Rp)', 'Total Tertagih (Rp)', 'Status'
 ];
+const COL_WIDTHS = [5, 28, 14, 14, 12, 14, 18, 20, 16];
 
-const COL_WIDTHS = [5, 30, 16, 16, 12, 18, 18];
+// Color tokens for status cells
+const STATUS_FILLS: Record<PaymentDetail['status'], { bg: string; fg: string }> = {
+  lancar:        { bg: 'FFC6EFCE', fg: 'FF006100' }, // green
+  kurang_lancar: { bg: 'FFFFEB9C', fg: 'FF9C5700' }, // yellow
+  macet:         { bg: 'FFFFC7CE', fg: 'FF9C0006' }, // red
+  returned:      { bg: 'FFFFC7CE', fg: 'FF9C0006' }, // red
+  lunas:         { bg: 'FFBDD7EE', fg: 'FF1F4E78' }, // blue
+};
+
+function computeStatus(contract: any): { status: PaymentDetail['status']; label: string } {
+  if (!contract) return { status: 'lancar', label: 'Lancar' };
+  if (contract.status === 'returned') return { status: 'returned', label: 'Macet (Return)' };
+  if (contract.status === 'completed' || contract.current_installment_index >= contract.tenor_days) {
+    return { status: 'lunas', label: 'Lunas' };
+  }
+  if (contract.status !== 'active') return { status: 'lunas', label: 'Selesai' };
+
+  const createdAt = contract.created_at ? new Date(contract.created_at) : new Date();
+  const today = new Date();
+  const daysElapsed = Math.max(1, Math.floor((today.getTime() - createdAt.getTime()) / 86400000));
+  const cur = contract.current_installment_index || 0;
+  const ratio = cur > 0 ? daysElapsed / cur : 999;
+  if (ratio <= 1.2) return { status: 'lancar', label: 'Lancar' };
+  if (ratio <= 2.0) return { status: 'kurang_lancar', label: 'Kurang Lancar' };
+  return { status: 'macet', label: 'Macet' };
+}
 
 export const exportPaymentPerCollectorDaily = async (
   payments: PaymentWithRelations[],
   contracts: any[],
-  selectedDate: string
+  selectedDate: string,
+  handovers?: CouponHandover[]
 ) => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Management System Kredit';
   workbook.created = new Date();
 
-  // Group payments by collector
-  const collectorGroupMap = new Map<string, PaymentSummary[]>();
-  const collectorInfoMap = new Map<string, { name: string; code: string }>();
+  // Build per-collector groups primarily from handovers (so unpaid/lunas tetap masuk).
+  // Fallback to payments-grouping if no handovers passed in.
+  const collectorMap = new Map<string, CollectorGroup>();
 
-  const bulkMap = new Map<string, PaymentSummary>();
+  const ensureCollector = (id: string, name: string, code: string) => {
+    if (!collectorMap.has(id)) {
+      collectorMap.set(id, { collectorId: id, collectorName: name, collectorCode: code, details: [] });
+    }
+    return collectorMap.get(id)!;
+  };
 
-  payments.forEach((payment) => {
-    const contract = contracts.find(c => c.id === payment.contract_id);
-    const dailyAmount = contract?.daily_installment_amount || 0;
-    const customerName = payment.credit_contracts?.customers?.name || '-';
-    const contractRef = payment.credit_contracts?.contract_ref || '-';
-    const collectorId = payment.collector_id || 'unassigned';
-    const collectorName = payment.collectors?.name || 'Tidak Ditugaskan';
-    const collectorCode = payment.collectors?.collector_code || '-';
+  if (handovers && handovers.length > 0) {
+    // Filter handovers to selected date already done by hook; otherwise filter here
+    handovers
+      .filter((h) => !selectedDate || h.handover_date === selectedDate)
+      .forEach((h) => {
+        const contract = contracts.find((c) => c.id === h.contract_id);
+        const customerName = h.credit_contracts?.customers?.name || '-';
+        const contractRef = h.credit_contracts?.contract_ref || '-';
+        const dailyAmount = h.credit_contracts?.daily_installment_amount || contract?.daily_installment_amount || 0;
+        const collectorId = h.collector_id || 'unassigned';
+        const collectorName = h.collectors?.name || 'Tidak Ditugaskan';
+        const collectorCode = h.collectors?.collector_code || '-';
 
-    const key = payment.contract_id;
-    if (!bulkMap.has(key)) {
-      bulkMap.set(key, {
-        contractId: payment.contract_id,
-        customerName,
-        contractRef,
-        paymentCount: 0,
-        totalCoupons: 0,
-        dailyAmount,
-        totalAmount: 0,
+        const currentIndex = h.credit_contracts?.current_installment_index ?? contract?.current_installment_index ?? 0;
+        const paidCount = Math.max(0, Math.min(currentIndex, h.end_index) - h.start_index + 1);
+        const totalAmount = paidCount * dailyAmount;
+
+        const merged = {
+          ...contract,
+          current_installment_index: currentIndex,
+          tenor_days: h.credit_contracts?.tenor_days ?? contract?.tenor_days,
+          status: h.credit_contracts?.status ?? contract?.status,
+        };
+        const { status, label } = computeStatus(merged);
+
+        const group = ensureCollector(collectorId, collectorName, collectorCode);
+        group.details.push({
+          contractId: h.contract_id,
+          customerName,
+          contractRef,
+          startIndex: h.start_index,
+          endIndex: h.end_index,
+          couponCount: h.coupon_count,
+          paidCount,
+          dailyAmount,
+          totalAmount,
+          status,
+          statusLabel: label,
+        });
       });
-    }
+  } else {
+    // Fallback: build from payments
+    const map = new Map<string, PaymentDetail & { _collectorId: string; _collectorName: string; _collectorCode: string; _indices: number[] }>();
+    payments.forEach((p) => {
+      const contract = contracts.find((c) => c.id === p.contract_id);
+      const dailyAmount = contract?.daily_installment_amount || 0;
+      const customerName = p.credit_contracts?.customers?.name || '-';
+      const contractRef = p.credit_contracts?.contract_ref || '-';
+      const collectorId = p.collector_id || 'unassigned';
+      const collectorName = p.collectors?.name || 'Tidak Ditugaskan';
+      const collectorCode = p.collectors?.collector_code || '-';
+      const key = `${p.contract_id}-${collectorId}`;
+      const { status, label } = computeStatus(contract);
+      if (!map.has(key)) {
+        map.set(key, {
+          contractId: p.contract_id,
+          customerName, contractRef,
+          startIndex: p.installment_index, endIndex: p.installment_index,
+          couponCount: 0, paidCount: 0,
+          dailyAmount, totalAmount: 0,
+          status, statusLabel: label,
+          _collectorId: collectorId, _collectorName: collectorName, _collectorCode: collectorCode,
+          _indices: [],
+        });
+      }
+      const e = map.get(key)!;
+      e._indices.push(p.installment_index);
+      e.paidCount += 1;
+      e.couponCount += 1;
+      e.totalAmount += dailyAmount;
+    });
+    map.forEach((e) => {
+      e._indices.sort((a, b) => a - b);
+      e.startIndex = e._indices[0];
+      e.endIndex = e._indices[e._indices.length - 1];
+      const group = ensureCollector(e._collectorId, e._collectorName, e._collectorCode);
+      group.details.push({
+        contractId: e.contractId, customerName: e.customerName, contractRef: e.contractRef,
+        startIndex: e.startIndex, endIndex: e.endIndex,
+        couponCount: e.couponCount, paidCount: e.paidCount,
+        dailyAmount: e.dailyAmount, totalAmount: e.totalAmount,
+        status: e.status, statusLabel: e.statusLabel,
+      });
+    });
+  }
 
-    const summary = bulkMap.get(key)!;
-    summary.paymentCount += 1;
-    summary.totalCoupons += 1;
-    summary.totalAmount += dailyAmount;
+  // Sort collectors and details
+  const collectorList = Array.from(collectorMap.values()).sort((a, b) => a.collectorName.localeCompare(b.collectorName));
+  collectorList.forEach((c) => c.details.sort((a, b) => a.contractRef.localeCompare(b.contractRef)));
 
-    // Group by collector
-    if (!collectorGroupMap.has(collectorId)) {
-      collectorGroupMap.set(collectorId, []);
-      collectorInfoMap.set(collectorId, { name: collectorName, code: collectorCode });
-    }
-    const collectorGroup = collectorGroupMap.get(collectorId)!;
-    if (!collectorGroup.some(s => s.contractId === summary.contractId)) {
-      collectorGroup.push(summary);
-    }
-  });
-
-  // Create summary sheet
+  // ========= Summary sheet =========
   const summarySheet = workbook.addWorksheet('Ringkasan');
+  summarySheet.mergeCells('A1:F1');
+  const t = summarySheet.getCell('A1');
+  t.value = 'LAPORAN INPUT PEMBAYARAN - RINGKASAN PER KOLEKTOR';
+  t.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+  t.alignment = { horizontal: 'center' };
+  t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
 
-  // Title
-  summarySheet.mergeCells('A1:G1');
-  const summaryTitleCell = summarySheet.getCell('A1');
-  summaryTitleCell.value = 'LAPORAN INPUT PEMBAYARAN - RINGKASAN PER KOLEKTOR';
-  summaryTitleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
-  summaryTitleCell.alignment = { horizontal: 'center' };
-  summaryTitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
-
-  // Date info
-  summarySheet.mergeCells('A2:G2');
-  const summaryDateCell = summarySheet.getCell('A2');
-  summaryDateCell.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}`;
-  summaryDateCell.font = { italic: true, size: 12 };
-  summaryDateCell.alignment = { horizontal: 'center' };
-
+  summarySheet.mergeCells('A2:F2');
+  const d = summarySheet.getCell('A2');
+  d.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}`;
+  d.font = { italic: true, size: 12 };
+  d.alignment = { horizontal: 'center' };
   summarySheet.addRow([]);
 
-  // Headers
-  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Jumlah Pembayaran', 'Total Kupon', 'Total Tertagih (Rp)'];
-  const summaryHRow = summarySheet.addRow(summaryHeaders);
-  summaryHRow.eachCell((cell) => {
+  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Total Kupon', 'Total Dibayar', 'Total Tertagih (Rp)'];
+  const sh = summarySheet.addRow(summaryHeaders);
+  sh.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
   });
 
-  const summaryStartRow = summaryHRow.number + 1;
-
-  // Summary data
-  const collectorList: CollectorPaymentGroup[] = Array.from(collectorGroupMap.entries()).map(([collectorId, paymentSummaries]) => {
-    const collectorInfo = collectorInfoMap.get(collectorId)!;
-    const sortedPayments = paymentSummaries.sort((a, b) => a.contractRef.localeCompare(b.contractRef));
-    const totalPaymentCount = sortedPayments.reduce((sum, p) => sum + p.paymentCount, 0);
-    const totalCoupons = sortedPayments.reduce((sum, p) => sum + p.totalCoupons, 0);
-    const totalAmount = sortedPayments.reduce((sum, p) => sum + p.totalAmount, 0);
-
-    return {
-      collectorId,
-      collectorName: collectorInfo.name,
-      collectorCode: collectorInfo.code,
-      payments: sortedPayments,
-      totalPaymentCount,
-      totalCoupons,
-      totalAmount,
-    };
-  });
-
-  // Sort by collector name
-  collectorList.sort((a, b) => a.collectorName.localeCompare(b.collectorName));
-
-  // Summary rows
-  collectorList.forEach((collector, i) => {
-    const summaryRowValues = [
-      i + 1,
-      collector.collectorName,
-      collector.collectorCode,
-      collector.totalPaymentCount,
-      collector.totalCoupons,
-      collector.totalAmount,
-    ];
-
-    const summaryRow = summarySheet.addRow(summaryRowValues);
-    summaryRow.eachCell((cell, colNum) => {
+  collectorList.forEach((c, i) => {
+    const totalCoupons = c.details.reduce((s, x) => s + x.couponCount, 0);
+    const totalPaid = c.details.reduce((s, x) => s + x.paidCount, 0);
+    const totalAmount = c.details.reduce((s, x) => s + x.totalAmount, 0);
+    const r = summarySheet.addRow([i + 1, c.collectorName, c.collectorCode, totalCoupons, totalPaid, totalAmount]);
+    r.eachCell((cell, col) => {
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-      if ([4, 5].includes(colNum)) {
-        cell.numFmt = '#,##0';
-        cell.alignment = { horizontal: 'center' };
-      } else if ([6].includes(colNum)) {
-        cell.numFmt = '"Rp "#,##0';
-        cell.alignment = { horizontal: 'right' };
-      } else if (colNum === 1) {
-        cell.alignment = { horizontal: 'center' };
-      }
+      if (col === 1) cell.alignment = { horizontal: 'center' };
+      else if (col === 4 || col === 5) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'center' }; }
+      else if (col === 6) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
     });
   });
+  summarySheet.columns = [5, 22, 12, 14, 14, 20].map((w) => ({ width: w }));
 
-  summarySheet.columns = [5, 20, 12, 16, 12, 18].map((width) => ({ width }));
-
-  // Create detail sheet per collector
+  // ========= Per-collector detail sheets =========
   const usedNames = new Set<string>();
-  collectorList.forEach(({ collectorName, collectorCode, payments: collectorPayments, totalPaymentCount, totalCoupons, totalAmount }) => {
-    const baseName = collectorName.substring(0, 28).replace(/[\\/*?[\]:]/g, '');
+  collectorList.forEach((c) => {
+    const baseName = c.collectorName.substring(0, 28).replace(/[\\/*?[\]:]/g, '');
     let safeName = baseName;
     let suffix = 1;
     while (usedNames.has(safeName) || workbook.getWorksheet(safeName)) {
-      safeName = `${baseName}-${suffix}`;
-      suffix += 1;
+      safeName = `${baseName}-${suffix++}`;
     }
     usedNames.add(safeName);
 
-    // Create sheet for this collector
     const sheet = workbook.addWorksheet(safeName);
+    sheet.mergeCells('A1:I1');
+    const tt = sheet.getCell('A1');
+    tt.value = `LAPORAN INPUT PEMBAYARAN - ${c.collectorName.toUpperCase()}`;
+    tt.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    tt.alignment = { horizontal: 'center' };
+    tt.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
 
-    // Title
-    sheet.mergeCells('A1:G1');
-    const titleCell = sheet.getCell('A1');
-    titleCell.value = `LAPORAN INPUT PEMBAYARAN - ${collectorName.toUpperCase()}`;
-    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
-    titleCell.alignment = { horizontal: 'center' };
-    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
-
-    // Date & Collector info
-    sheet.mergeCells('A2:G2');
-    const dateCell = sheet.getCell('A2');
-    dateCell.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} | Kolektor: ${collectorName} (${collectorCode})`;
-    dateCell.font = { italic: true, size: 12 };
-    dateCell.alignment = { horizontal: 'left' };
-
+    sheet.mergeCells('A2:I2');
+    const dd = sheet.getCell('A2');
+    dd.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} | Kolektor: ${c.collectorName} (${c.collectorCode})`;
+    dd.font = { italic: true, size: 12 };
+    dd.alignment = { horizontal: 'left' };
     sheet.addRow([]);
 
-    // Headers
     const hRow = sheet.addRow(HEADERS);
     hRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -205,65 +241,51 @@ export const exportPaymentPerCollectorDaily = async (
 
     const startRow = hRow.number + 1;
 
-    // Data rows
-    collectorPayments.forEach((payment, idx) => {
-      const rowValues = [
-        idx + 1,
-        payment.customerName,
-        payment.contractRef,
-        payment.paymentCount,
-        payment.totalCoupons,
-        payment.dailyAmount,
-        payment.totalAmount,
-      ];
-
-      const row = sheet.addRow(rowValues);
-      row.eachCell((cell, colNum) => {
+    c.details.forEach((d, idx) => {
+      const range = d.startIndex === d.endIndex ? `${d.startIndex}` : `${d.startIndex}-${d.endIndex}`;
+      const row = sheet.addRow([
+        idx + 1, d.customerName, d.contractRef, range,
+        d.couponCount, d.paidCount, d.dailyAmount, d.totalAmount, d.statusLabel,
+      ]);
+      row.eachCell((cell, col) => {
         cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-
-        if ([4, 5].includes(colNum)) {
-          cell.numFmt = '#,##0';
-          cell.alignment = { horizontal: 'center' };
-        } else if ([6, 7].includes(colNum)) {
-          cell.numFmt = '"Rp "#,##0';
-          cell.alignment = { horizontal: 'right' };
-        } else if (colNum === 1) {
+        if (col === 1 || col === 4 || col === 5 || col === 6) cell.alignment = { horizontal: 'center' };
+        if (col === 5 || col === 6) cell.numFmt = '#,##0';
+        if (col === 7 || col === 8) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
+        if (col === 9) {
+          const fill = STATUS_FILLS[d.status];
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill.bg } };
+          cell.font = { bold: true, color: { argb: fill.fg } };
           cell.alignment = { horizontal: 'center' };
         }
       });
     });
 
-    // Subtotal row
-    const subtotalRowNum = startRow + collectorPayments.length;
-    const subtotalRowValues = [
-      '', '', 'TOTAL:', 
-      { formula: `SUM(D${startRow}:D${subtotalRowNum - 1})` },
-      { formula: `SUM(E${startRow}:E${subtotalRowNum - 1})` },
-      '',
-      { formula: `SUM(G${startRow}:G${subtotalRowNum - 1})` },
-    ];
+    if (c.details.length > 0) {
+      const endRow = startRow + c.details.length - 1;
+      const sub = sheet.addRow([
+        '', '', 'TOTAL:', '',
+        { formula: `SUM(E${startRow}:E${endRow})` },
+        { formula: `SUM(F${startRow}:F${endRow})` },
+        '',
+        { formula: `SUM(H${startRow}:H${endRow})` },
+        '',
+      ]);
+      sub.eachCell((cell, col) => {
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
+        cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        if (col === 5 || col === 6) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'center' }; }
+        if (col === 8) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
+        if (col === 3) cell.alignment = { horizontal: 'right' };
+      });
+    }
 
-    const subtotalRow = sheet.addRow(subtotalRowValues);
-    subtotalRow.eachCell((cell, colNum) => {
-      cell.font = { bold: true };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
-      cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-
-      if ([4, 5].includes(colNum)) {
-        cell.numFmt = '#,##0';
-        cell.alignment = { horizontal: 'right' };
-      } else if ([7].includes(colNum)) {
-        cell.numFmt = '"Rp "#,##0';
-        cell.alignment = { horizontal: 'right' };
-      } else if (colNum === 3) {
-        cell.alignment = { horizontal: 'right' };
-      }
-    });
-
-    sheet.columns = COL_WIDTHS.map((width) => ({ width }));
+    // Auto-filter on header so user can filter by Status (Lunas, Macet, dst)
+    sheet.autoFilter = { from: { row: hRow.number, column: 1 }, to: { row: hRow.number, column: HEADERS.length } };
+    sheet.columns = COL_WIDTHS.map((w) => ({ width: w }));
   });
 
-  // Download
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
