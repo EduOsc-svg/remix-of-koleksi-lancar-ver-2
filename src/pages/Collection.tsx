@@ -240,7 +240,7 @@ export default function Collection() {
                     return;
                   }
                   try {
-                    exportPaymentPerCollectorDaily(payments, contracts || [], selectedDate);
+                    exportPaymentPerCollectorDaily(payments, contracts || [], selectedDate, handovers || []);
                     toast.success("Export pembayaran per kolektor berhasil");
                   } catch (error) {
                     toast.error("Gagal export pembayaran per kolektor");
