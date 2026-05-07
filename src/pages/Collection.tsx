@@ -235,19 +235,20 @@ export default function Collection() {
               <Button 
                 variant="outline" 
                 onClick={() => {
-                  if (!payments || payments.length === 0) {
-                    toast.error("Tidak ada data pembayaran untuk diexport");
+                  const hasData = (payments && payments.length > 0) || (handovers && handovers.length > 0);
+                  if (!hasData) {
+                    toast.error("Tidak ada data untuk diexport");
                     return;
                   }
                   try {
-                    exportPaymentPerCollectorDaily(payments, contracts || [], selectedDate);
+                    exportPaymentPerCollectorDaily(payments, contracts || [], selectedDate, handovers || []);
                     toast.success("Export pembayaran per kolektor berhasil");
                   } catch (error) {
                     toast.error("Gagal export pembayaran per kolektor");
                     console.error(error);
                   }
                 }}
-                disabled={paymentsLoading}
+                disabled={paymentsLoading || handoversLoading}
               >
                 <Download className="mr-2 h-4 w-4" /> Export Per Kolektor
               </Button>
