@@ -12,6 +12,7 @@ export interface OmsetContractDetail {
   sales_code: string;
   start_date: string;
   modal: number;
+  dp: number;
   omset: number;
   profit: number;
 }
@@ -29,6 +30,7 @@ export interface OmsetBySales {
 export interface OmsetDetailsSummary {
   scope: 'monthly' | 'yearly';
   total_modal: number;
+  total_dp: number;
   total_omset: number;
   total_profit: number;
   contracts_count: number;
@@ -65,14 +67,17 @@ const fetchOmsetDetails = async (
   const details: OmsetContractDetail[] = [];
   const bySalesMap = new Map<string, OmsetBySales>();
   let total_modal = 0;
+  let total_dp = 0;
   let total_omset = 0;
 
   (contracts || []).forEach((c: any) => {
-    const modal = Number(c.omset || 0);
-    const omset = Number(c.total_loan_amount || 0);
-    const profit = omset - modal;
-    total_modal += modal;
-    total_omset += omset;
+  const modal = Number(c.omset || 0);
+  const dp = Number(c.dp || 0);
+  const omset = Number(c.total_loan_amount || 0);
+  const profit = omset - modal;
+  total_modal += modal;
+  total_dp += dp;
+  total_omset += omset;
 
     const agentInfo = c.sales_agent_id ? agentLookup.get(c.sales_agent_id) : null;
     const salesName = agentInfo?.name || 'Tanpa Sales';
@@ -88,6 +93,7 @@ const fetchOmsetDetails = async (
       sales_code: salesCode,
       start_date: c.start_date,
       modal,
+      dp,
       omset,
       profit,
     });
@@ -104,11 +110,13 @@ const fetchOmsetDetails = async (
     bySalesMap.set(key, ex);
   });
 
-  details.sort((a, b) => b.omset - a.omset);
+  // Sort contracts by start_date (newest first) instead of by omset
+  details.sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
 
   return {
     scope,
     total_modal,
+    total_dp,
     total_omset,
     total_profit: total_omset - total_modal,
     contracts_count: details.length,

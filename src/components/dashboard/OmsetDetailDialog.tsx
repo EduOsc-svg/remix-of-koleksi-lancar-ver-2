@@ -32,6 +32,10 @@ export function OmsetDetailDialog({ open, onOpenChange, title, data }: Props) {
               <p className="text-lg font-bold text-blue-600">{formatRupiah(data?.total_modal ?? 0)}</p>
             </div>
             <div className="rounded-md border p-3">
+              <p className="text-xs text-muted-foreground">Total DP</p>
+              <p className="text-lg font-bold text-orange-600">{formatRupiah(data?.total_dp ?? 0)}</p>
+            </div>
+            <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">Total Omset</p>
               <p className="text-lg font-bold text-indigo-600">{formatRupiah(data?.total_omset ?? 0)}</p>
             </div>
@@ -85,13 +89,14 @@ export function OmsetDetailDialog({ open, onOpenChange, title, data }: Props) {
                     <TableHead>Pelanggan</TableHead>
                     <TableHead>Sales</TableHead>
                     <TableHead className="text-right">Modal</TableHead>
+                    <TableHead className="text-right">DP</TableHead>
                     <TableHead className="text-right">Omset</TableHead>
                     <TableHead className="text-right">Keuntungan</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(data?.contracts || []).length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Tidak ada kontrak</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Tidak ada kontrak</TableCell></TableRow>
                   ) : data!.contracts.map((c) => (
                     <TableRow key={c.contract_id}>
                       <TableCell className="whitespace-nowrap">{format(new Date(c.start_date), 'dd MMM yyyy', { locale: idLocale })}</TableCell>
@@ -104,6 +109,7 @@ export function OmsetDetailDialog({ open, onOpenChange, title, data }: Props) {
                         <Badge variant="outline">{c.sales_code !== '-' ? `${c.sales_code} · ` : ''}{c.sales_name}</Badge>
                       </TableCell>
                       <TableCell className="text-right text-blue-600">{formatRupiah(c.modal)}</TableCell>
+                      <TableCell className="text-right text-orange-600">{formatRupiah(c.dp ?? 0)}</TableCell>
                       <TableCell className="text-right text-indigo-600">{formatRupiah(c.omset)}</TableCell>
                       <TableCell className="text-right text-green-600 font-semibold">{formatRupiah(c.profit)}</TableCell>
                     </TableRow>

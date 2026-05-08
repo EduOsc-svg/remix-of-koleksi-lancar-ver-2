@@ -126,19 +126,16 @@ export const useUnpaidCommissions = (salesAgentId: string | null, periodStart?: 
         if (row.customer_id) keyByCustomerId.set(row.customer_id, key);
       });
 
-      // Get all paid commissions for this agent (optionally filter by payment_date)
-      let paidQuery = supabase
+      // Get all paid commissions for this agent — but to decide unpaid for contracts in the
+      // selected period we should check payments by contract_id (payments may occur outside period)
+      const { data: paidCommissionsAll, error: commissionsError } = await supabase
         .from('commission_payments')
         .select('contract_id')
         .eq('sales_agent_id', salesAgentId);
-      if (periodStart) paidQuery = paidQuery.gte('payment_date', periodStart);
-      if (periodEnd) paidQuery = paidQuery.lte('payment_date', periodEnd);
-
-      const { data: paidCommissions, error: commissionsError } = await paidQuery;
 
       if (commissionsError) throw commissionsError;
 
-      const paidContractIds = new Set((paidCommissions || []).map(c => c.contract_id));
+  const paidContractIds = new Set((paidCommissionsAll || []).map(c => c.contract_id));
 
       // Get agent's settings
       const { data: agent, error: agentError } = await supabase
@@ -343,9 +340,10 @@ export const useCommissionSummary = (salesAgentId: string | null, periodStart?: 
       }
 
       // Get all contracts for this agent (optional period filter)
+      // include start_date because yearly calculations rely on contract.start_date
       let contractQuery = supabase
         .from('credit_contracts')
-        .select('id, total_loan_amount, created_at')
+        .select('id, total_loan_amount, start_date')
         .eq('sales_agent_id', salesAgentId);
       if (periodStart) contractQuery = contractQuery.gte('start_date', periodStart);
       if (periodEnd) contractQuery = contractQuery.lte('start_date', periodEnd);
@@ -354,15 +352,11 @@ export const useCommissionSummary = (salesAgentId: string | null, periodStart?: 
 
       if (contractsError) throw contractsError;
 
-      // Get paid commissions (optionally filter by payment_date)
-      let paidQuery = supabase
+      // Get paid commissions (all time) — payments for contracts may occur outside period
+      const { data: paidCommissions, error: commissionsError } = await supabase
         .from('commission_payments')
         .select('contract_id, amount')
         .eq('sales_agent_id', salesAgentId);
-      if (periodStart) paidQuery = paidQuery.gte('payment_date', periodStart);
-      if (periodEnd) paidQuery = paidQuery.lte('payment_date', periodEnd);
-
-      const { data: paidCommissions, error: commissionsError } = await paidQuery;
 
       if (commissionsError) throw commissionsError;
 
@@ -378,12 +372,18 @@ export const useCommissionSummary = (salesAgentId: string | null, periodStart?: 
         return sum + (contractAmount * pct) / 100;
       }, 0);
 
-      // Calculate yearly omset for bonus (current year contracts) - unaffected by period filter
+      // Calculate yearly omset for bonus (current year contracts) - unaffected by period filter.
+      // Business rule: Bonus Tahunan = 0.8% × total omset tahun berjalan.
+      // Important: this is calculated on the total yearly omset (sum of contract amounts for the year)
+      // and NOT by taking 0.8% of each month's omset and summing those monthly bonuses. Using the
+      // yearly total avoids double-counting and matches the financial dashboard behavior.
       const currentYear = new Date().getFullYear();
+      // Use contract.start_date to determine which contracts count for the year (consistent with yearly summaries)
       const yearlyOmset = (contracts || [])
-        .filter(c => new Date(c.created_at).getFullYear() === currentYear)
+        .filter(c => new Date(c.start_date).getFullYear() === currentYear)
         .reduce((sum, c) => sum + Number(c.total_loan_amount || 0), 0);
-      
+
+      // YEARLY_BONUS_PERCENTAGE is applied as percent (0.8 means 0.8%)
       const yearlyBonus = (yearlyOmset * 0.8) / 100; // 0.8% yearly bonus
 
       return {

@@ -76,7 +76,8 @@ export default function SalesAgents() {
   
   // Compute effective values (defaults for missing params)
   const effectiveMonth = monthParam || format(startOfMonth(new Date()), 'yyyy-MM');
-  const effectiveYear = yearParam || String(new Date().getFullYear());
+  // Default to 2026 explicitly to avoid unexpected year jumps
+  const effectiveYear = yearParam || '2026';
 
   // resolve month for hooks
   const selectedMonthForHook = new Date(effectiveMonth);
@@ -115,23 +116,58 @@ export default function SalesAgents() {
     });
     let kontrakAktif = 0;
     let kontrakTidakAktif = 0;
-    const customerActiveMap = new Map<string, boolean>(); // true = punya kontrak aktif
+
+    // helpers to normalize phone/name similar to other hooks
+    const normalizePhoneLocal = (phone: string | null | undefined) => {
+      if (!phone) return '';
+      const digits = String(phone).replace(/\D/g, '');
+      if (!digits) return '';
+      if (digits.startsWith('62')) return '0' + digits.slice(2);
+      if (digits.startsWith('0')) return digits;
+      return digits;
+    };
+    const normalizeNameLocal = (name: string | null | undefined) => {
+      if (!name) return '';
+      return String(name).trim().toLowerCase().replace(/\s+/g, ' ');
+    };
+
+    // Map customerKey -> { active: boolean, count: number }
+    const customerMap = new Map<string, { active: boolean; count: number }>();
+
     inPeriod.forEach((c: any) => {
       const isActive = c.status !== 'completed' && c.status !== 'returned';
       if (isActive) kontrakAktif += 1; else kontrakTidakAktif += 1;
-      if (c.customer_id) {
-        const prev = customerActiveMap.get(c.customer_id) || false;
-        customerActiveMap.set(c.customer_id, prev || isActive);
+
+      // build a stable customer key: prefer customer_id, else normalized phone, else normalized name
+      let key = '';
+      if (c.customer_id) key = `id:${c.customer_id}`;
+      else {
+        const p = normalizePhoneLocal(c.customers?.phone);
+        if (p) key = `p:${p}`;
+        else {
+          const n = normalizeNameLocal(c.customers?.name);
+          if (n) key = `n:${n}`;
+        }
       }
+
+  // If we cannot build a customer key (no id/phone/name), fallback to contract id
+  if (!key) key = `contract:${c.id}`;
+
+      const prev = customerMap.get(key) || { active: false, count: 0 };
+      prev.count += 1;
+      prev.active = prev.active || isActive;
+      customerMap.set(key, prev);
     });
+
     let konsumenAktif = 0;
     let konsumenTidakAktif = 0;
-    customerActiveMap.forEach((v) => { if (v) konsumenAktif += 1; else konsumenTidakAktif += 1; });
+    customerMap.forEach((v) => { if (v.active) konsumenAktif += 1; else konsumenTidakAktif += 1; });
+
     return {
       totalKontrak: inPeriod.length,
       kontrakAktif,
       kontrakTidakAktif,
-      totalKonsumen: customerActiveMap.size,
+      totalKonsumen: customerMap.size,
       konsumenAktif,
       konsumenTidakAktif,
     };
@@ -209,7 +245,8 @@ export default function SalesAgents() {
       needsUpdate = true;
     }
     if (!sp.get('year')) {
-      sp.set('year', String(new Date().getFullYear()));
+      // Default year set to 2026 to match requested default period
+      sp.set('year', '2026');
       needsUpdate = true;
     }
     if (!sp.get('periodType')) {
@@ -387,8 +424,10 @@ export default function SalesAgents() {
       return;
     }
 
-    // Tentukan range tanggal sesuai periode aktif untuk filter kontrak di sheet detail
-    const exportPeriodLabel = format(selectedMonthForHook, 'MMMM yyyy', { locale: idLocale });
+    // Tentukan label periode untuk export (bulanan atau tahunan)
+    const exportPeriodLabel = isYearly
+      ? `Tahun ${effectiveYear}`
+      : format(selectedMonthForHook, 'MMMM yyyy', { locale: idLocale });
     const exportStartDate = periodRange.start;
     const exportEndDate = periodRange.end;
 
@@ -611,7 +650,7 @@ export default function SalesAgents() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const periodSlug = effectiveMonth;
+  const periodSlug = isYearly ? effectiveYear : effectiveMonth;
     a.download = `Laporan_Sales_Agent_${periodSlug}_${new Date().toISOString().split('T')[0]}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
@@ -639,7 +678,7 @@ export default function SalesAgents() {
   const shiftYear = (delta: number | null = null) => {
     const sp = new URLSearchParams(searchParams);
     let target: number;
-    if (delta === null) target = new Date().getFullYear();
+    if (delta === null) target = 2026;
     else target = parseInt(effectiveYear, 10) + delta;
     sp.set('year', String(target));
     setSearchParams(sp, { replace: true });
@@ -648,6 +687,18 @@ export default function SalesAgents() {
   const setPeriodType = (val: 'monthly' | 'yearly') => {
     const sp = new URLSearchParams(searchParams);
     sp.set('periodType', val);
+    // If switching to yearly, ensure the `year` param is set and follows the currently selected month
+    // (so toggling between monthly/yearly doesn't yield an unexpected year like 2027).
+    if (val === 'yearly') {
+      // Prefer explicit year param, else derive from month param, else fallback to current year
+  const derivedYear = yearParam || (monthParam ? monthParam.split('-')[0] : null) || '2026';
+      sp.set('year', derivedYear);
+    } else {
+      // Ensure month param exists when switching back to monthly
+      if (!sp.get('month')) {
+        sp.set('month', format(startOfMonth(new Date()), 'yyyy-MM'));
+      }
+    }
     setSearchParams(sp, { replace: true });
   };
 

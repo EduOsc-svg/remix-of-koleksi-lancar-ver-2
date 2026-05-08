@@ -93,7 +93,10 @@ export function CommissionPaymentDialog({
         <div className="p-3 border rounded-lg bg-purple-50 dark:bg-purple-900/20 mb-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-muted-foreground">Bonus Tahunan (0.8% x Omset {new Date().getFullYear()})</p>
+              <p className="text-xs text-muted-foreground">
+                Bonus Tahunan — dihitung sebagai 0.8% × total omset tahun {new Date().getFullYear()}. Bonus ini berdasarkan total omset tahunan,
+                bukan penjumlahan komisi bulanan atau penghitungan 0.8% per bulan.
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Omset Tahun Ini: {formatRupiah(summary?.yearlyOmset || 0)}
               </p>
