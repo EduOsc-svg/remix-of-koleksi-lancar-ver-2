@@ -48,6 +48,7 @@ import { useAgentOmset } from "@/hooks/useAgentOmset";
 import { useAgentCustomerCounts } from "@/hooks/useAgentCustomerCounts";
 import { Badge } from "@/components/ui/badge";
 import { useMonthlyPerformance } from '@/hooks/useMonthlyPerformance';
+import { useYearlyFinancialSummary } from '@/hooks/useYearlyFinancialSummary';
 import { usePagination } from "@/hooks/usePagination";
 import { TablePagination } from "@/components/TablePagination";
 import { formatRupiah } from "@/lib/format";
@@ -97,6 +98,7 @@ export default function SalesAgents() {
 
   const { data: agentCustomerCounts } = useAgentCustomerCounts(periodRange.start, periodRange.end);
   const { data: monthlyData } = useMonthlyPerformance(selectedMonthForHook);
+  const { data: yearlyData } = useYearlyFinancialSummary(selectedYearForHook);
   const { data: commissionTiers } = useCommissionTiers();
 
   // ===== Statistik kartu (mengikuti periode aktif) =====
@@ -280,31 +282,21 @@ export default function SalesAgents() {
   };
 
   const getAgentOmset = (agentId: string) => {
-    // Mode tahunan: agregasi langsung dari allContracts dalam tahun terpilih
-    if (isYearly && allContracts) {
-      const start = periodRange.start;
-      const end = periodRange.end;
-      const list = allContracts.filter((c: any) => {
-        if (c.sales_agent_id !== agentId) return false;
-        if (!c.start_date) return false;
-        if (c.status === 'returned') return false;
-        const d = String(c.start_date).slice(0, 10);
-        return d >= start && d <= end;
-      });
-      const total_omset = list.reduce((s: number, c: any) => s + Number(c.total_loan_amount || 0), 0);
-      const total_modal = list.reduce((s: number, c: any) => s + Number(c.omset || 0), 0);
-      const pct = total_omset > 0 && commissionTiers && commissionTiers.length > 0
-        ? calculateTieredCommission(total_omset, commissionTiers)
-        : 0;
-      const total_commission = (total_omset * pct) / 100;
+    // Mode tahunan: pakai hook tahunan (sumber kebenaran tunggal — query DB langsung
+    // dengan filter start_date dan status, sama seperti monthly).
+    if (isYearly) {
+      const rec: any = yearlyData?.agents?.find((a: any) => a.agent_id === agentId);
+      const total_omset = rec?.total_omset ?? 0;
+      const total_modal = rec?.total_modal ?? 0;
+      const total_commission = rec?.total_commission ?? 0;
       return {
         agent_id: agentId,
-        commission_percentage: pct,
+        commission_percentage: rec?.commission_percentage ?? 0,
         total_omset,
         total_modal,
-        total_contracts: list.length,
+        total_contracts: rec?.contracts_count ?? 0,
         total_commission,
-        profit: total_omset - total_modal,
+        profit: rec?.profit ?? (total_omset - total_modal),
       } as any;
     }
 
