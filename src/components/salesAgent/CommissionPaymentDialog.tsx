@@ -38,6 +38,9 @@ interface CommissionPaymentDialogProps {
   agentId: string;
   agentName: string;
   agentCode: string;
+  // optional period filter (yyyy-MM-dd)
+  periodStart?: string | null;
+  periodEnd?: string | null;
 }
 
 export function CommissionPaymentDialog({
@@ -46,13 +49,15 @@ export function CommissionPaymentDialog({
   agentId,
   agentName,
   agentCode,
+  periodStart = null,
+  periodEnd = null,
 }: CommissionPaymentDialogProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("unpaid");
 
-  const { data: paidCommissions, isLoading: loadingPaid } = useCommissionPayments(agentId);
-  const { data: unpaidCommissions, isLoading: loadingUnpaid } = useUnpaidCommissions(agentId);
-  const { data: summary } = useCommissionSummary(agentId);
+  const { data: paidCommissions, isLoading: loadingPaid } = useCommissionPayments(agentId, periodStart, periodEnd);
+  const { data: unpaidCommissions, isLoading: loadingUnpaid } = useUnpaidCommissions(agentId, periodStart, periodEnd);
+  const { data: summary } = useCommissionSummary(agentId, periodStart, periodEnd);
 
   const totalUnpaidAmount = unpaidCommissions?.reduce((sum, item) => sum + item.commission, 0) || 0;
 

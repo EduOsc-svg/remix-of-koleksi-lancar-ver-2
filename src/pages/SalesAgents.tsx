@@ -1068,6 +1068,8 @@ export default function SalesAgents() {
           agentId={selectedAgent.id}
           agentName={selectedAgent.name}
           agentCode={selectedAgent.agent_code}
+          periodStart={periodRange.start}
+          periodEnd={periodRange.end}
         />
       )}
 

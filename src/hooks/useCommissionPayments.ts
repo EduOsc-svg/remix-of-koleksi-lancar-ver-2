@@ -20,13 +20,13 @@ export interface CommissionPaymentWithDetails extends CommissionPayment {
 }
 
 // Fetch all commission payments for a sales agent
-export const useCommissionPayments = (salesAgentId: string | null) => {
+export const useCommissionPayments = (salesAgentId: string | null, periodStart?: string | null, periodEnd?: string | null) => {
   return useQuery({
-    queryKey: ['commission_payments', salesAgentId],
+    queryKey: ['commission_payments', salesAgentId, periodStart || null, periodEnd || null],
     queryFn: async () => {
       if (!salesAgentId) return [];
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('commission_payments')
         .select(`
           *,
@@ -37,6 +37,15 @@ export const useCommissionPayments = (salesAgentId: string | null) => {
         `)
         .eq('sales_agent_id', salesAgentId)
         .order('payment_date', { ascending: false });
+
+      if (periodStart) {
+        query = query.gte('payment_date', periodStart);
+      }
+      if (periodEnd) {
+        query = query.lte('payment_date', periodEnd);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -66,14 +75,14 @@ const normalizeName = (name: string | null | undefined): string => {
 };
 
 // Fetch unpaid commissions (contracts without commission payment)
-export const useUnpaidCommissions = (salesAgentId: string | null) => {
+export const useUnpaidCommissions = (salesAgentId: string | null, periodStart?: string | null, periodEnd?: string | null) => {
   return useQuery({
-    queryKey: ['unpaid_commissions', salesAgentId],
+    queryKey: ['unpaid_commissions', salesAgentId, periodStart || null, periodEnd || null],
     queryFn: async () => {
       if (!salesAgentId) return [];
 
-      // Get all contracts for this agent
-      const { data: contracts, error: contractsError } = await supabase
+      // Build contract query for this agent with optional period filter
+      let contractQuery = supabase
         .from('credit_contracts')
         .select(`
           id,
@@ -81,35 +90,34 @@ export const useUnpaidCommissions = (salesAgentId: string | null) => {
           total_loan_amount,
           omset,
           customer_id,
-          customers(name, phone)
+          customers(name, phone),
+          start_date
         `)
         .eq('sales_agent_id', salesAgentId);
 
+      if (periodStart) contractQuery = contractQuery.gte('start_date', periodStart);
+      if (periodEnd) contractQuery = contractQuery.lte('start_date', periodEnd);
+
+      const { data: contracts, error: contractsError } = await contractQuery;
+
       if (contractsError) throw contractsError;
 
-      // Hitung jumlah kontrak GLOBAL per pelanggan (acuan: no HP, fallback: nama)
-      const customerIds = Array.from(
-        new Set((contracts || []).map((c: any) => c.customer_id).filter(Boolean))
-      );
+      // Build normalized keys (phone/name) from agent's contracts so we can lookup duplicates across DB
+      const phoneKeys = Array.from(new Set((contracts || []).map((c: any) => normalizePhone(c.customers?.phone)).filter(Boolean)));
+      const nameKeys = Array.from(new Set((contracts || []).map((c: any) => normalizeName(c.customers?.name)).filter(Boolean)));
 
-      const phoneByCustomerId = new Map<string, string>();
-      const nameByCustomerId = new Map<string, string>();
-      (contracts || []).forEach((c: any) => {
-        if (c.customer_id) {
-          phoneByCustomerId.set(c.customer_id, normalizePhone(c.customers?.phone));
-          nameByCustomerId.set(c.customer_id, normalizeName(c.customers?.name));
-        }
-      });
-
-      // Ambil SEMUA kontrak (lintas agen) untuk pelanggan2 ini
+      // contractCountByKey maps `p:<phone>` or `n:<name>` -> count across ALL contracts
       const contractCountByKey = new Map<string, number>();
+
+      // First try to fetch by customer_id when available (fast and precise)
+      const customerIds = Array.from(new Set((contracts || []).map((c: any) => c.customer_id).filter(Boolean)));
       if (customerIds.length > 0) {
-        const { data: allContracts } = await supabase
+        const { data: byIdContracts } = await supabase
           .from('credit_contracts')
           .select('customer_id, customers(phone, name)')
           .in('customer_id', customerIds);
 
-        (allContracts || []).forEach((row: any) => {
+        (byIdContracts || []).forEach((row: any) => {
           const phoneKey = normalizePhone(row.customers?.phone);
           const nameKey = normalizeName(row.customers?.name);
           const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
@@ -117,11 +125,63 @@ export const useUnpaidCommissions = (salesAgentId: string | null) => {
         });
       }
 
-      // Get all paid commissions for this agent
-      const { data: paidCommissions, error: commissionsError } = await supabase
+      // Additionally, try to fetch contracts matching phone or name values (covers missing/duplicate customer_id)
+      const orParts: string[] = [];
+      phoneKeys.forEach(p => orParts.push(`customers->>phone.eq.${p}`));
+      nameKeys.forEach(n => orParts.push(`customers->>name.eq.${n}`));
+
+      // Instead of a single fragile .or() query, perform small safe queries per normalized value
+      for (const p of phoneKeys) {
+        try {
+          const { data: rows, error } = await supabase
+            .from('credit_contracts')
+            .select('customers(phone, name)')
+            .filter('customers->>phone', 'eq', p);
+          if (error) {
+            console.warn('[useUnpaidCommissions] phone lookup failed', { phone: p, error });
+          } else {
+            (rows || []).forEach((row: any) => {
+              const phoneKey = normalizePhone(row.customers?.phone);
+              const nameKey = normalizeName(row.customers?.name);
+              const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
+              if (key) contractCountByKey.set(key, (contractCountByKey.get(key) || 0) + 1);
+            });
+          }
+        } catch (e) {
+          console.warn('[useUnpaidCommissions] phone lookup exception', { phone: p, error: e });
+        }
+      }
+
+      for (const n of nameKeys) {
+        try {
+          const { data: rows, error } = await supabase
+            .from('credit_contracts')
+            .select('customers(phone, name)')
+            .filter('customers->>name', 'eq', n);
+          if (error) {
+            console.warn('[useUnpaidCommissions] name lookup failed', { name: n, error });
+          } else {
+            (rows || []).forEach((row: any) => {
+              const phoneKey = normalizePhone(row.customers?.phone);
+              const nameKey = normalizeName(row.customers?.name);
+              const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
+              if (key) contractCountByKey.set(key, (contractCountByKey.get(key) || 0) + 1);
+            });
+          }
+        } catch (e) {
+          console.warn('[useUnpaidCommissions] name lookup exception', { name: n, error: e });
+        }
+      }
+
+      // Get all paid commissions for this agent (optionally filter by payment_date)
+      let paidQuery = supabase
         .from('commission_payments')
         .select('contract_id')
         .eq('sales_agent_id', salesAgentId);
+      if (periodStart) paidQuery = paidQuery.gte('payment_date', periodStart);
+      if (periodEnd) paidQuery = paidQuery.lte('payment_date', periodEnd);
+
+      const { data: paidCommissions, error: commissionsError } = await paidQuery;
 
       if (commissionsError) throw commissionsError;
 
@@ -288,9 +348,9 @@ export const useDeleteCommissionPayment = () => {
 };
 
 // Get commission summary for a sales agent
-export const useCommissionSummary = (salesAgentId: string | null) => {
+export const useCommissionSummary = (salesAgentId: string | null, periodStart?: string | null, periodEnd?: string | null) => {
   return useQuery({
-    queryKey: ['commission_summary', salesAgentId],
+    queryKey: ['commission_summary', salesAgentId, periodStart || null, periodEnd || null],
     queryFn: async () => {
       if (!salesAgentId) return { 
         totalPaid: 0, 
@@ -326,19 +386,27 @@ export const useCommissionSummary = (salesAgentId: string | null) => {
         }
       }
 
-      // Get all contracts for this agent
-      const { data: contracts, error: contractsError } = await supabase
+      // Get all contracts for this agent (optional period filter)
+      let contractQuery = supabase
         .from('credit_contracts')
         .select('id, total_loan_amount, created_at')
         .eq('sales_agent_id', salesAgentId);
+      if (periodStart) contractQuery = contractQuery.gte('start_date', periodStart);
+      if (periodEnd) contractQuery = contractQuery.lte('start_date', periodEnd);
+
+      const { data: contracts, error: contractsError } = await contractQuery;
 
       if (contractsError) throw contractsError;
 
-      // Get paid commissions
-      const { data: paidCommissions, error: commissionsError } = await supabase
+      // Get paid commissions (optionally filter by payment_date)
+      let paidQuery = supabase
         .from('commission_payments')
         .select('contract_id, amount')
         .eq('sales_agent_id', salesAgentId);
+      if (periodStart) paidQuery = paidQuery.gte('payment_date', periodStart);
+      if (periodEnd) paidQuery = paidQuery.lte('payment_date', periodEnd);
+
+      const { data: paidCommissions, error: commissionsError } = await paidQuery;
 
       if (commissionsError) throw commissionsError;
 
@@ -354,7 +422,7 @@ export const useCommissionSummary = (salesAgentId: string | null) => {
         return sum + (contractAmount * pct) / 100;
       }, 0);
 
-      // Calculate yearly omset for bonus (current year contracts)
+      // Calculate yearly omset for bonus (current year contracts) - unaffected by period filter
       const currentYear = new Date().getFullYear();
       const yearlyOmset = (contracts || [])
         .filter(c => new Date(c.created_at).getFullYear() === currentYear)
