@@ -106,6 +106,17 @@ export const useUnpaidCommissions = (salesAgentId: string | null, periodStart?: 
       const phoneKeys = Array.from(new Set((contracts || []).map((c: any) => normalizePhone(c.customers?.phone)).filter(Boolean)));
       const nameKeys = Array.from(new Set((contracts || []).map((c: any) => normalizeName(c.customers?.name)).filter(Boolean)));
 
+      // Map customer_id -> normalized phone/name (used later to derive customer status)
+      const phoneByCustomerId = new Map<string, string>();
+      const nameByCustomerId = new Map<string, string>();
+      (contracts || []).forEach((c: any) => {
+        if (!c.customer_id) return;
+        const p = normalizePhone(c.customers?.phone);
+        const n = normalizeName(c.customers?.name);
+        if (p) phoneByCustomerId.set(c.customer_id, p);
+        if (n) nameByCustomerId.set(c.customer_id, n);
+      });
+
       // contractCountByKey maps `p:<phone>` or `n:<name>` -> count across ALL contracts
       const contractCountByKey = new Map<string, number>();
 
