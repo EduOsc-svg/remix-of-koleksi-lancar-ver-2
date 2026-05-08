@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { startOfYear, endOfYear, format, eachMonthOfInterval, differenceInDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { calculateTieredCommission, CommissionTier } from './useCommissionTiers';
+import { CommissionTier, YEARLY_BONUS_PERCENTAGE } from './useCommissionTiers';
 
 
 export type ContractStatusFilter = 'all' | 'lancar' | 'kurang_lancar' | 'macet' | 'completed';
@@ -232,39 +232,41 @@ export const useYearlyFinancialSummary = (year: Date = new Date(), statusFilter:
         if (md) md.collected += amt;
       });
 
-      // Hitung komisi PER AGENT per bulan berdasarkan omset bulan itu (SIMPLE & CONSISTENT)
-      // Ini konsisten dengan monthly: komisi = tier(omset_bulan) × omset_bulan
-      // Total tahunan = sum komisi bulanan (bukan tier(omset_tahunan) yang bisa berbeda)
+      // KOMISI TAHUNAN: pakai BONUS TAHUNAN (YEARLY_BONUS_PERCENTAGE = 0.8%) dari total omset
+      // tahun berjalan per agent — BUKAN tier per bulan.
+      // Rumus: komisi_agent = total_omset_tahunan_agent × 0.8%
       let totalCommission = 0;
       const agentYearlyCommission = new Map<string, number>();
 
-      // BEST PRACTICE: Calculate commission per agent per month, then sum to yearly
+      agentYearlyOmset.forEach((omset, agentId) => {
+        const commission = (omset * YEARLY_BONUS_PERCENTAGE) / 100;
+        agentYearlyCommission.set(agentId, commission);
+        totalCommission += commission;
+      });
+
+      // Distribusi komisi ke breakdown bulanan secara proporsional terhadap omset bulan
+      // (untuk konsistensi tampilan monthly_breakdown), dan alokasi ke kontrak per share.
       months.forEach((monthDate) => {
         const monthKey = format(monthDate, 'yyyy-MM');
         const md = monthlyData.get(monthKey)!;
         let monthCommission = 0;
 
-        // Per agent dalam bulan ini: hitung komisi dari omset bulan itu
         monthlyAgentOmset.get(monthKey)?.forEach((agentMonthOmset, agentId) => {
           if (agentMonthOmset > 0) {
-            const commissionPct = calculateTieredCommission(agentMonthOmset, tiers);
-            const agentMonthCommission = (agentMonthOmset * commissionPct) / 100;
-            monthCommission += agentMonthCommission;
-
-            // Accumulate yearly commission per agent
-            agentYearlyCommission.set(agentId, (agentYearlyCommission.get(agentId) || 0) + agentMonthCommission);
-            totalCommission += agentMonthCommission;
+            const agentYear = agentYearlyOmset.get(agentId) || 0;
+            const agentYearComm = agentYearlyCommission.get(agentId) || 0;
+            const share = agentYear > 0 ? agentMonthOmset / agentYear : 0;
+            monthCommission += agentYearComm * share;
           }
         });
 
         md.commission = monthCommission;
 
-        // Alokasi komisi ke kontrak per share omset kontrak di bulan itu
         const detailMap = monthlyContractDetails.get(monthKey)!;
         if (md.total_omset > 0) {
           detailMap.forEach((d) => {
-            const share = d.omset / md.total_omset;
-            d.commission = monthCommission * share;
+            const sh = d.omset / md.total_omset;
+            d.commission = monthCommission * sh;
             d.net_profit = (d.omset - d.modal) - d.commission;
           });
         }
@@ -335,7 +337,7 @@ export const useYearlyFinancialSummary = (year: Date = new Date(), statusFilter:
         const total_modal = agentYearlyModal.get(agent.id) || 0;
         const total_commission = agentYearlyCommission.get(agent.id) || 0;
         const profit = total_omset - total_modal;
-        const commissionPct = total_omset > 0 ? calculateTieredCommission(total_omset, tiers) : 0;
+        const commissionPct = total_omset > 0 ? YEARLY_BONUS_PERCENTAGE : 0;
 
         return {
           agent_id: agent.id,
