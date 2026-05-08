@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { startOfYear, endOfYear, format, eachMonthOfInterval, differenceInDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { calculateTieredCommission, CommissionTier, YEARLY_BONUS_PERCENTAGE } from './useCommissionTiers';
+import { CommissionTier, YEARLY_BONUS_PERCENTAGE } from './useCommissionTiers';
 
 
 export type ContractStatusFilter = 'all' | 'lancar' | 'kurang_lancar' | 'macet' | 'completed';
