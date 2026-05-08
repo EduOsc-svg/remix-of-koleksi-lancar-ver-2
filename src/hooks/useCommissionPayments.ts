@@ -106,83 +106,25 @@ export const useUnpaidCommissions = (salesAgentId: string | null, periodStart?: 
       const phoneKeys = Array.from(new Set((contracts || []).map((c: any) => normalizePhone(c.customers?.phone)).filter(Boolean)));
       const nameKeys = Array.from(new Set((contracts || []).map((c: any) => normalizeName(c.customers?.name)).filter(Boolean)));
 
-      // Map customer_id -> normalized phone/name (used later to derive customer status)
-      const phoneByCustomerId = new Map<string, string>();
-      const nameByCustomerId = new Map<string, string>();
-      (contracts || []).forEach((c: any) => {
-        if (!c.customer_id) return;
-        const p = normalizePhone(c.customers?.phone);
-        const n = normalizeName(c.customers?.name);
-        if (p) phoneByCustomerId.set(c.customer_id, p);
-        if (n) nameByCustomerId.set(c.customer_id, n);
-      });
+      // Klasifikasi Baru/Lama harus konsisten dengan tabel Sales Agents
+      // (lihat useAgentCustomerCounts): hitung lifetime kontrak per pelanggan
+      // di SELURUH histori, lintas agen.
+      void phoneKeys; void nameKeys;
+      const { data: allContractsForCount, error: allErr } = await supabase
+        .from('credit_contracts')
+        .select('customer_id, customers(name, phone)');
+      if (allErr) throw allErr;
 
-      // contractCountByKey maps `p:<phone>` or `n:<name>` -> count across ALL contracts
       const contractCountByKey = new Map<string, number>();
-
-      // First try to fetch by customer_id when available (fast and precise)
-      const customerIds = Array.from(new Set((contracts || []).map((c: any) => c.customer_id).filter(Boolean)));
-      if (customerIds.length > 0) {
-        const { data: byIdContracts } = await supabase
-          .from('credit_contracts')
-          .select('customer_id, customers(phone, name)')
-          .in('customer_id', customerIds);
-
-        (byIdContracts || []).forEach((row: any) => {
-          const phoneKey = normalizePhone(row.customers?.phone);
-          const nameKey = normalizeName(row.customers?.name);
-          const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
-          if (key) contractCountByKey.set(key, (contractCountByKey.get(key) || 0) + 1);
-        });
-      }
-
-      // Additionally, try to fetch contracts matching phone or name values (covers missing/duplicate customer_id)
-      const orParts: string[] = [];
-      phoneKeys.forEach(p => orParts.push(`customers->>phone.eq.${p}`));
-      nameKeys.forEach(n => orParts.push(`customers->>name.eq.${n}`));
-
-      // Instead of a single fragile .or() query, perform small safe queries per normalized value
-      for (const p of phoneKeys) {
-        try {
-          const { data: rows, error } = await supabase
-            .from('credit_contracts')
-            .select('customers(phone, name)')
-            .filter('customers->>phone', 'eq', p);
-          if (error) {
-            console.warn('[useUnpaidCommissions] phone lookup failed', { phone: p, error });
-          } else {
-            (rows || []).forEach((row: any) => {
-              const phoneKey = normalizePhone(row.customers?.phone);
-              const nameKey = normalizeName(row.customers?.name);
-              const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
-              if (key) contractCountByKey.set(key, (contractCountByKey.get(key) || 0) + 1);
-            });
-          }
-        } catch (e) {
-          console.warn('[useUnpaidCommissions] phone lookup exception', { phone: p, error: e });
-        }
-      }
-
-      for (const n of nameKeys) {
-        try {
-          const { data: rows, error } = await supabase
-            .from('credit_contracts')
-            .select('customers(phone, name)')
-            .filter('customers->>name', 'eq', n);
-          if (error) {
-            console.warn('[useUnpaidCommissions] name lookup failed', { name: n, error });
-          } else {
-            (rows || []).forEach((row: any) => {
-              const phoneKey = normalizePhone(row.customers?.phone);
-              const nameKey = normalizeName(row.customers?.name);
-              const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
-              if (key) contractCountByKey.set(key, (contractCountByKey.get(key) || 0) + 1);
-            });
-          }
-        } catch (e) {
-          console.warn('[useUnpaidCommissions] name lookup exception', { name: n, error: e });
-        }
-      }
+      const keyByCustomerId = new Map<string, string>();
+      (allContractsForCount || []).forEach((row: any) => {
+        const phoneKey = normalizePhone(row.customers?.phone);
+        const nameKey = normalizeName(row.customers?.name);
+        const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
+        if (!key) return;
+        contractCountByKey.set(key, (contractCountByKey.get(key) || 0) + 1);
+        if (row.customer_id) keyByCustomerId.set(row.customer_id, key);
+      });
 
       // Get all paid commissions for this agent (optionally filter by payment_date)
       let paidQuery = supabase
@@ -235,10 +177,13 @@ export const useUnpaidCommissions = (salesAgentId: string | null, periodStart?: 
             : fixedPct;
           const commission = (contractAmount * commissionPct) / 100;
 
-          // Status pelanggan: Lama jika no HP (fallback nama) muncul di ≥2 kontrak
-          const phoneKey = phoneByCustomerId.get(contract.customer_id) || '';
-          const nameKey = nameByCustomerId.get(contract.customer_id) || '';
-          const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
+          // Status pelanggan: Lama jika ≥2 kontrak lifetime (lintas agen)
+          let key = keyByCustomerId.get(contract.customer_id) || null;
+          if (!key) {
+            const p = normalizePhone(contract.customers?.phone);
+            const n = normalizeName(contract.customers?.name);
+            key = p ? `p:${p}` : n ? `n:${n}` : null;
+          }
           const totalContractsForCustomer = key ? (contractCountByKey.get(key) || 1) : 1;
           const customer_status: 'baru' | 'lama' = totalContractsForCustomer >= 2 ? 'lama' : 'baru';
 
