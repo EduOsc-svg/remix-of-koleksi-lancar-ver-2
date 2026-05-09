@@ -694,6 +694,16 @@ export default function Dashboard() {
                 />
 
                 <StatCard
+                  icon={Receipt}
+                  iconColor="text-amber-500"
+                  label="Total DP"
+                  value={dpYearly?.total_dp ?? 0}
+                  valueColor="text-amber-600"
+                  subtitle={`${dpYearly?.contract_count ?? 0} kontrak ada DP`}
+                  hoverInfo={`Total Down Payment (DP) dari kontrak yang dibuat tahun ${selectedYear.getFullYear()}. Dihitung dari pembayaran pertama setiap kontrak.`}
+                />
+
+                <StatCard
                   icon={TrendingUp}
                   iconColor="text-green-500"
                   label="Keuntungan Kotor"
