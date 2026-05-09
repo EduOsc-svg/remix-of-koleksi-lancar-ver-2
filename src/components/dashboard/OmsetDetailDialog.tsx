@@ -5,6 +5,7 @@ import { formatRupiah } from "@/lib/format";
 import type { OmsetDetailsSummary } from "@/hooks/useOmsetDetails";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
+import { useMemo } from "react";
 
 interface Props {
   open: boolean;
@@ -14,6 +15,17 @@ interface Props {
 }
 
 export function OmsetDetailDialog({ open, onOpenChange, title, data }: Props) {
+  const totalKonsumen = useMemo(() => {
+    if (!data?.contracts) return 0;
+    const set = new Set<string>();
+    data.contracts.forEach((c) => {
+      const key = (c.customer_phone && c.customer_phone.trim())
+        || (c.customer_name && c.customer_name.trim().toLowerCase())
+        || c.contract_id;
+      set.add(key);
+    });
+    return set.size;
+  }, [data?.contracts]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[85vh] flex flex-col overflow-hidden">
@@ -26,6 +38,10 @@ export function OmsetDetailDialog({ open, onOpenChange, title, data }: Props) {
             <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">Jumlah Kontrak</p>
               <p className="text-lg font-bold">{data?.contracts_count ?? 0}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-xs text-muted-foreground">Total Konsumen</p>
+              <p className="text-lg font-bold text-purple-600">{totalKonsumen}</p>
             </div>
             <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">Total Modal</p>
@@ -42,39 +58,6 @@ export function OmsetDetailDialog({ open, onOpenChange, title, data }: Props) {
             <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">Keuntungan Kotor</p>
               <p className="text-lg font-bold text-green-600">{formatRupiah(data?.total_profit ?? 0)}</p>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold mb-2">Rekap per Sales</h3>
-            <div className="rounded-md border max-h-[260px] overflow-y-auto">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  <TableRow>
-                    <TableHead>Sales</TableHead>
-                    <TableHead className="text-right">Kontrak</TableHead>
-                    <TableHead className="text-right">Modal</TableHead>
-                    <TableHead className="text-right">Omset</TableHead>
-                    <TableHead className="text-right">Keuntungan</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(data?.by_sales || []).length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">Tidak ada data</TableCell></TableRow>
-                  ) : data!.by_sales.map((s) => (
-                    <TableRow key={s.sales_id || 'none'}>
-                      <TableCell>
-                        <div className="font-medium">{s.sales_name}</div>
-                        {s.sales_code !== '-' && <div className="text-xs text-muted-foreground">{s.sales_code}</div>}
-                      </TableCell>
-                      <TableCell className="text-right">{s.contract_count}</TableCell>
-                      <TableCell className="text-right text-blue-600">{formatRupiah(s.total_modal)}</TableCell>
-                      <TableCell className="text-right text-indigo-600">{formatRupiah(s.total_omset)}</TableCell>
-                      <TableCell className="text-right text-green-600 font-semibold">{formatRupiah(s.total_profit)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
             </div>
           </div>
 
