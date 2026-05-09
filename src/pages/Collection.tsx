@@ -392,7 +392,7 @@ function ContractPayments({ contractId }: { contractId: string }) {
             <th className="pb-2">Tanggal</th>
             <th className="pb-2">Kupon</th>
             <th className="pb-2 text-right">Jumlah</th>
-            <th className="pb-2">Collector</th>
+            <th className="pb-2">Kolektor</th>
             <th className="pb-2">Catatan</th>
           </tr>
         </thead>
