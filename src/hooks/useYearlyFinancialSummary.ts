@@ -55,7 +55,6 @@ export interface MonthlyDetailData {
 export interface YearlyFinancialSummary {
   total_modal: number;
   total_omset: number;
-  total_dp: number;
   total_profit: number;
   total_commission: number;
   total_collected: number;
@@ -122,7 +121,7 @@ export const useYearlyFinancialSummary = (year: Date = new Date(), statusFilter:
         { data: tiersData, error: tiersError },
       ] = await Promise.all([
         supabase.from('sales_agents').select('id, name, agent_code'),
-        supabase.from('credit_contracts').select('id, contract_ref, omset, dp, total_loan_amount, sales_agent_id, start_date, status, current_installment_index, tenor_days, created_at, product_type, customer_id, daily_installment_amount, customers(name, phone)').neq('status', 'returned').gte('start_date', yearStart).lte('start_date', yearEnd),
+        supabase.from('credit_contracts').select('id, contract_ref, omset, total_loan_amount, sales_agent_id, start_date, status, current_installment_index, tenor_days, created_at, product_type, customer_id, daily_installment_amount, customers(name, phone)').neq('status', 'returned').gte('start_date', yearStart).lte('start_date', yearEnd),
         supabase.from('payment_logs').select('amount_paid, payment_date, contract_id').gte('payment_date', yearStart).lte('payment_date', yearEnd),
         supabase.from('payment_logs').select('amount_paid, contract_id'),
         supabase.from('operational_expenses').select('amount, expense_date, description, category').gte('expense_date', yearStart).lte('expense_date', yearEnd),
@@ -166,7 +165,6 @@ export const useYearlyFinancialSummary = (year: Date = new Date(), statusFilter:
       // Totals (CONTRACT BASIS untuk modal/omset/profit, CASH untuk collected)
       let totalModal = 0;
       let totalOmset = 0;
-      let totalDp = 0;
       let totalCollected = 0;
       let totalExpenses = 0;
 
@@ -193,7 +191,6 @@ export const useYearlyFinancialSummary = (year: Date = new Date(), statusFilter:
 
         totalModal += modalFull;
         totalOmset += omsetFull;
-        totalDp += Number(contract.dp || 0);
 
         md.total_modal += modalFull;
         md.total_omset += omsetFull;
@@ -373,7 +370,6 @@ export const useYearlyFinancialSummary = (year: Date = new Date(), statusFilter:
       return {
         total_modal: totalModal,
         total_omset: totalOmset,
-        total_dp: totalDp,
         total_profit: totalProfit,
         total_commission: totalCommission,
         total_collected: totalCollected,

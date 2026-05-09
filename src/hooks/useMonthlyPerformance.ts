@@ -21,7 +21,6 @@ export interface MonthlyPerformanceData {
 export interface MonthlyPerformanceSummary {
   total_modal: number;
   total_omset: number;
-  total_dp: number;
   total_profit: number;
   total_collected: number;
   total_to_collect: number;
@@ -64,7 +63,7 @@ export const useMonthlyPerformance = (month: Date = new Date()) => {
         supabase.from('sales_agents').select('id, name, agent_code').order('name'),
         supabase
           .from('credit_contracts')
-          .select('id, omset, dp, total_loan_amount, sales_agent_id, start_date, status, tenor_days, daily_installment_amount')
+          .select('id, omset, total_loan_amount, sales_agent_id, start_date, status, tenor_days, daily_installment_amount')
           .neq('status', 'returned')
           .gte('start_date', monthStart)
           .lte('start_date', monthEnd),
@@ -93,11 +92,9 @@ export const useMonthlyPerformance = (month: Date = new Date()) => {
         total_modal: number;
         contract_ids: Set<string>;
       }>();
-      let totalDp = 0;
 
       (contracts || []).forEach((c: any) => {
         const agentId = c.sales_agent_id;
-        totalDp += Number(c.dp || 0);
         if (!agentId) return;
         const existing = agentDataMap.get(agentId) || {
           total_omset: 0,
@@ -187,7 +184,6 @@ export const useMonthlyPerformance = (month: Date = new Date()) => {
       return {
         total_modal,
         total_omset,
-        total_dp: totalDp,
         total_profit,
         total_commission,
         total_collected,
