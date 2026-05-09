@@ -285,6 +285,16 @@ export default function Dashboard() {
         />
 
         <StatCard
+          icon={Receipt}
+          iconColor="text-amber-500"
+          label="Total DP"
+          value={monthlyData?.total_dp ?? 0}
+          valueColor="text-amber-600"
+          subtitle="Uang muka kontrak baru bulan ini"
+          hoverInfo="Total Down Payment (uang muka) yang diterima dari pelanggan saat kontrak baru dibuat di bulan ini."
+        />
+
+        <StatCard
           icon={TrendingUp}
           iconColor="text-green-500"
           label="Keuntungan Kotor"
@@ -678,6 +688,16 @@ export default function Dashboard() {
                   subtitle={`Tahun ${selectedYear.getFullYear()}`}
                   hoverInfo={`Total: ${formatRupiah(yearlyFinancial?.total_omset ?? 0)} | ${yearlyFinancial?.contracts_count ?? 0} kontrak • Lancar: ${yearlyFinancial?.lancar_count ?? 0} | K.Lancar: ${yearlyFinancial?.kurang_lancar_count ?? 0} | Macet: ${yearlyFinancial?.macet_count ?? 0} | Lunas: ${yearlyFinancial?.completed_count ?? 0}`}
                   onDetailClick={() => { setOmsetDetailScope('yearly'); setOmsetDetailOpen(true); }}
+                />
+
+                <StatCard
+                  icon={Receipt}
+                  iconColor="text-amber-500"
+                  label="Total DP"
+                  value={yearlyFinancial?.total_dp ?? 0}
+                  valueColor="text-amber-600"
+                  subtitle={`Uang muka tahun ${selectedYear.getFullYear()}`}
+                  hoverInfo={`Total Down Payment (uang muka) yang diterima dari pelanggan untuk kontrak yang dibuat tahun ${selectedYear.getFullYear()}.`}
                 />
 
                 <StatCard
