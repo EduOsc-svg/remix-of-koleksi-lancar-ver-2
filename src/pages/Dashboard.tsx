@@ -52,6 +52,7 @@ import { OmsetDetailDialog } from "@/components/dashboard/OmsetDetailDialog";
 import { useOutstandingDetailsMonthly, useOutstandingDetailsYearly } from "@/hooks/useOutstandingDetails";
 import { useOmsetDetailsMonthly, useOmsetDetailsYearly } from "@/hooks/useOmsetDetails";
 import { useCollectorSalaryTotal, useCollectorSalaryTotalYearly } from "@/hooks/useCollectorSalaries";
+import { useDpTotalMonthly, useDpTotalYearly } from "@/hooks/useDpTotal";
 import { YEARLY_BONUS_PERCENTAGE } from "@/hooks/useCommissionTiers";
 import { toast } from "sonner";
 
@@ -94,6 +95,8 @@ export default function Dashboard() {
   const { createExpense, deleteExpense } = useOperationalExpenseMutations();
   const collectorSalaryTotal = useCollectorSalaryTotal(selectedMonth);
   const collectorSalaryTotalYearly = useCollectorSalaryTotalYearly(selectedYear);
+  const { data: dpMonthly } = useDpTotalMonthly(selectedMonth);
+  const { data: dpYearly } = useDpTotalYearly(selectedYear);
   const { promptAdminNote } = useAdminNote();
   
   // Pagination for sales agent performance table
