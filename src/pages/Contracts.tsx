@@ -1428,7 +1428,7 @@ export default function Contracts() {
                           <p className="font-medium font-mono">{getNoFaktur(selectedContract.id)}</p>
                         </div>
                         <div>
-                          <p className="text-sm text-muted-foreground">Sales Agent</p>
+                          <p className="text-sm text-muted-foreground">Agen Sales</p>
                           <p className="font-medium">
                             {salesAgents?.find(a => a.id === selectedContract.sales_agent_id)?.name || "-"}
                             {(() => {
