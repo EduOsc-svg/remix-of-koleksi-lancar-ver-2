@@ -161,7 +161,7 @@ BEGIN
     -- omset field = Modal (capital)
     -- total_loan_amount = Omset (selling price / total to be paid)
     INSERT INTO public.credit_contracts (
-      id, customer_id, contract_ref, omset, total_loan_amount, 
+      id, customer_id, contract_ref, omset, dp, total_loan_amount, 
       tenor_days, daily_installment_amount, start_date, sales_agent_id, 
       status, current_installment_index
     )
@@ -170,6 +170,7 @@ BEGIN
       v_customer_id,
       v_contract_ref,
       v_modal,           -- omset field stores Modal (capital)
+      0,                 -- dp default 0 (Down Payment, kolom baru)
       v_omset,           -- total_loan_amount stores Omset (selling price)
       v_tenor,
       v_daily_amount,
