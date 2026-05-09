@@ -6,6 +6,7 @@
       "update": "Perbarui",
       "delete": "Hapus",
       "payment": "Pembayaran",
+      "bulk_payment": "Pembayaran Massal",
       "login": "Masuk",
       "logout": "Keluar"
     },
@@ -18,6 +19,8 @@
       "sales agent": "Agen Sales",
       "holiday": "Hari Libur",
       "user": "Pengguna"
+      ,
+      "daily_collection": "Penagihan Harian"
     },
     "activityHistory": "Riwayat Aktivitas",
     "searchPlaceholder": "Cari berdasarkan pengguna, aksi, entitas...",
@@ -43,6 +46,7 @@
     "edit": "Ubah",
     "create": "Buat",
     "search": "Cari",
+  "read": "Lihat",
     "actions": "Aksi",
     "yes": "Ya",
     "no": "Tidak",
