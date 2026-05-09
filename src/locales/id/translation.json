@@ -1,6 +1,24 @@
 {
   "auditLog": {
     "title": "Log Audit",
+    "actions": {
+      "create": "Buat",
+      "update": "Perbarui",
+      "delete": "Hapus",
+      "payment": "Pembayaran",
+      "login": "Masuk",
+      "logout": "Keluar"
+    },
+    "entities": {
+      "contract": "Kontrak",
+      "customer": "Pelanggan",
+      "coupon": "Kupon",
+      "route": "Jalur",
+      "agent": "Agen",
+      "sales agent": "Agen Sales",
+      "holiday": "Hari Libur",
+      "user": "Pengguna"
+    },
     "activityHistory": "Riwayat Aktivitas",
     "searchPlaceholder": "Cari berdasarkan pengguna, aksi, entitas...",
     "timestamp": "Waktu",

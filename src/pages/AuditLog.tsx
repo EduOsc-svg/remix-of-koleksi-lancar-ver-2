@@ -72,6 +72,17 @@ export default function AuditLog() {
   const uniqueActions = Array.from(new Set((logs || []).map(l => l.action.toUpperCase()))).sort();
   const uniqueEntities = Array.from(new Set((logs || []).map(l => l.entity_type))).sort();
 
+  // Helpers to translate action/entity labels to Indonesian when available
+  const translateActionLabel = (action: string) => {
+    const key = `auditLog.actions.${action.toLowerCase()}`;
+    return t(key, { defaultValue: action });
+  };
+
+  const translateEntityLabel = (entity: string) => {
+    const key = `auditLog.entities.${entity.toLowerCase()}`;
+    return t(key, { defaultValue: entity });
+  };
+
   const filteredLogs = logs?.filter((log) => {
     const search = searchTerm.toLowerCase();
     const matchesSearch = !search || (
@@ -129,7 +140,7 @@ export default function AuditLog() {
                 <SelectContent>
                   <SelectItem value="all">Semua Aksi</SelectItem>
                   {uniqueActions.map(a => (
-                    <SelectItem key={a} value={a}>{a}</SelectItem>
+                    <SelectItem key={a} value={a}>{translateActionLabel(a)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -141,7 +152,7 @@ export default function AuditLog() {
                 <SelectContent>
                   <SelectItem value="all">Semua Entitas</SelectItem>
                   {uniqueEntities.map(e => (
-                    <SelectItem key={e} value={e} className="capitalize">{e}</SelectItem>
+                    <SelectItem key={e} value={e} className="capitalize">{translateEntityLabel(e)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

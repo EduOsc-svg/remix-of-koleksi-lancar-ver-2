@@ -109,15 +109,8 @@ export default function SalesAgents() {
     }
     const start = periodRange.start;
     const end = periodRange.end;
-    const inPeriod = allContracts.filter((c: any) => {
-      if (!c.start_date) return false;
-      const d = String(c.start_date).slice(0, 10);
-      return d >= start && d <= end;
-    });
-    let kontrakAktif = 0;
-    let kontrakTidakAktif = 0;
 
-    // helpers to normalize phone/name similar to other hooks
+    // Follow the same normalization & lifetime-key logic as useAgentCustomerCounts
     const normalizePhoneLocal = (phone: string | null | undefined) => {
       if (!phone) return '';
       const digits = String(phone).replace(/\D/g, '');
@@ -131,43 +124,56 @@ export default function SalesAgents() {
       return String(name).trim().toLowerCase().replace(/\s+/g, ' ');
     };
 
-    // Map customerKey -> { active: boolean, count: number }
-    const customerMap = new Map<string, { active: boolean; count: number }>();
+    // 1) Build global contractCountByKey and keyByCustomerId (lifetime classification)
+    const contractCountByKey = new Map<string, number>();
+    const keyByCustomerId = new Map<string, string>();
+    (allContracts || []).forEach((row: any) => {
+      const phoneKey = normalizePhoneLocal(row.customers?.phone);
+      const nameKey = normalizeNameLocal(row.customers?.name);
+      const key = phoneKey ? `p:${phoneKey}` : nameKey ? `n:${nameKey}` : null;
+      if (!key) return;
+      contractCountByKey.set(key, (contractCountByKey.get(key) || 0) + 1);
+      if (row.customer_id) keyByCustomerId.set(row.customer_id, key);
+    });
+
+    // 2) Filter contracts in the selected period
+    const inPeriod = (allContracts || []).filter((c: any) => {
+      if (!c.start_date) return false;
+      const d = String(c.start_date).slice(0, 10);
+      return d >= start && d <= end;
+    });
+
+    let kontrakAktif = 0;
+    let kontrakTidakAktif = 0;
+
+    // 3) Build unique customer keys present in-period, aligning with hook behavior:
+    //    only contracts that can be mapped to a lifetime key (via customer_id -> key) are counted.
+    const uniqueCustomerKeys = new Map<string, { active: boolean }>();
 
     inPeriod.forEach((c: any) => {
       const isActive = c.status !== 'completed' && c.status !== 'returned';
       if (isActive) kontrakAktif += 1; else kontrakTidakAktif += 1;
 
-      // build a stable customer key: prefer customer_id, else normalized phone, else normalized name
-      let key = '';
-      if (c.customer_id) key = `id:${c.customer_id}`;
-      else {
-        const p = normalizePhoneLocal(c.customers?.phone);
-        if (p) key = `p:${p}`;
-        else {
-          const n = normalizeNameLocal(c.customers?.name);
-          if (n) key = `n:${n}`;
-        }
-      }
+      // Only consider contracts that can be mapped to a persistent customer key.
+      // This mirrors useAgentCustomerCounts which ignores rows without a customer_id/key.
+      if (!c.customer_id) return;
+      const key = keyByCustomerId.get(c.customer_id);
+      if (!key) return;
 
-  // If we cannot build a customer key (no id/phone/name), fallback to contract id
-  if (!key) key = `contract:${c.id}`;
-
-      const prev = customerMap.get(key) || { active: false, count: 0 };
-      prev.count += 1;
+      const prev = uniqueCustomerKeys.get(key) || { active: false };
       prev.active = prev.active || isActive;
-      customerMap.set(key, prev);
+      uniqueCustomerKeys.set(key, prev);
     });
 
     let konsumenAktif = 0;
     let konsumenTidakAktif = 0;
-    customerMap.forEach((v) => { if (v.active) konsumenAktif += 1; else konsumenTidakAktif += 1; });
+    uniqueCustomerKeys.forEach((v) => { if (v.active) konsumenAktif += 1; else konsumenTidakAktif += 1; });
 
     return {
       totalKontrak: inPeriod.length,
       kontrakAktif,
       kontrakTidakAktif,
-      totalKonsumen: customerMap.size,
+      totalKonsumen: uniqueCustomerKeys.size,
       konsumenAktif,
       konsumenTidakAktif,
     };
