@@ -52,6 +52,7 @@ import { OmsetDetailDialog } from "@/components/dashboard/OmsetDetailDialog";
 import { useOutstandingDetailsMonthly, useOutstandingDetailsYearly } from "@/hooks/useOutstandingDetails";
 import { useOmsetDetailsMonthly, useOmsetDetailsYearly } from "@/hooks/useOmsetDetails";
 import { useCollectorSalaryTotal, useCollectorSalaryTotalYearly } from "@/hooks/useCollectorSalaries";
+import { useDpTotalMonthly, useDpTotalYearly } from "@/hooks/useDpTotal";
 import { YEARLY_BONUS_PERCENTAGE } from "@/hooks/useCommissionTiers";
 import { toast } from "sonner";
 
@@ -94,6 +95,8 @@ export default function Dashboard() {
   const { createExpense, deleteExpense } = useOperationalExpenseMutations();
   const collectorSalaryTotal = useCollectorSalaryTotal(selectedMonth);
   const collectorSalaryTotalYearly = useCollectorSalaryTotalYearly(selectedYear);
+  const { data: dpMonthly } = useDpTotalMonthly(selectedMonth);
+  const { data: dpYearly } = useDpTotalYearly(selectedYear);
   const { promptAdminNote } = useAdminNote();
   
   // Pagination for sales agent performance table
@@ -282,6 +285,16 @@ export default function Dashboard() {
           subtitle="Kontrak baru bulan ini"
           hoverInfo="Total omset (harga jual) dari semua kontrak yang dibuat bulan ini — diakui penuh saat kontrak terbit (accrual)."
           onDetailClick={() => { setOmsetDetailScope('monthly'); setOmsetDetailOpen(true); }}
+        />
+
+        <StatCard
+          icon={Receipt}
+          iconColor="text-amber-500"
+          label="Total DP"
+          value={dpMonthly?.total_dp ?? 0}
+          valueColor="text-amber-600"
+          subtitle={`${dpMonthly?.contract_count ?? 0} kontrak ada DP`}
+          hoverInfo="Total Down Payment (DP) dari kontrak baru bulan ini. Dihitung dari pembayaran pertama setiap kontrak yang dibuat bulan ini."
         />
 
         <StatCard
@@ -678,6 +691,16 @@ export default function Dashboard() {
                   subtitle={`Tahun ${selectedYear.getFullYear()}`}
                   hoverInfo={`Total: ${formatRupiah(yearlyFinancial?.total_omset ?? 0)} | ${yearlyFinancial?.contracts_count ?? 0} kontrak • Lancar: ${yearlyFinancial?.lancar_count ?? 0} | K.Lancar: ${yearlyFinancial?.kurang_lancar_count ?? 0} | Macet: ${yearlyFinancial?.macet_count ?? 0} | Lunas: ${yearlyFinancial?.completed_count ?? 0}`}
                   onDetailClick={() => { setOmsetDetailScope('yearly'); setOmsetDetailOpen(true); }}
+                />
+
+                <StatCard
+                  icon={Receipt}
+                  iconColor="text-amber-500"
+                  label="Total DP"
+                  value={dpYearly?.total_dp ?? 0}
+                  valueColor="text-amber-600"
+                  subtitle={`${dpYearly?.contract_count ?? 0} kontrak ada DP`}
+                  hoverInfo={`Total Down Payment (DP) dari kontrak yang dibuat tahun ${selectedYear.getFullYear()}. Dihitung dari pembayaran pertama setiap kontrak.`}
                 />
 
                 <StatCard
