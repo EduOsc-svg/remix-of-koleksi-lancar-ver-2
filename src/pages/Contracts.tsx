@@ -313,30 +313,9 @@ export default function Contracts() {
   };
 
   const verifyPassword = async (password: string): Promise<boolean> => {
-    try {
-      // Get current user email
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser?.email) {
-        console.error('No authenticated user found');
-        return false;
-      }
-
-      // Try to re-authenticate with current user email and provided password
-      const { error } = await supabase.auth.signInWithPassword({
-        email: currentUser.email,
-        password: password,
-      });
-      
-      if (error) {
-        console.error('Password verification error:', error.message);
-        return false;
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Password verification error:', error);
-      return false;
-    }
+    // Password admin terpisah untuk verifikasi update/delete/return kontrak
+    const ADMIN_UPDATE_PASSWORD = "Kemuje97";
+    return password === ADMIN_UPDATE_PASSWORD;
   };
 
   const handlePasswordSubmit = async () => {
