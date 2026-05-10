@@ -424,6 +424,7 @@ export default function Contracts() {
           start_date: formData.start_date,
           status: formData.status,
           omset: Math.max(0, (formData.modal || 0) - (formData.dp || 0)),
+          dp: formData.dp || 0,
           _note: note,
         } as any);
 
@@ -489,6 +490,7 @@ export default function Contracts() {
           start_date: formData.start_date,
           status: formData.status,
           omset: Math.max(0, (formData.modal || 0) - (formData.dp || 0)),
+          dp: formData.dp || 0,
         } as any);
         
         // Generate installment coupons for new active contracts
