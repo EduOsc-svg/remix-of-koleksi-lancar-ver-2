@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Home } from "lucide-react";
+import { Loader2, Home, KeyRound } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 // Validation schema
 const authSchema = z.object({
@@ -23,6 +24,14 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+
+  // Reset password dialog state
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCurrentPassword, setResetCurrentPassword] = useState("");
+  const [resetNewLoginPassword, setResetNewLoginPassword] = useState("");
+  const [resetNewAdminPassword, setResetNewAdminPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
 
   // Check if already logged in via context
   useEffect(() => {
@@ -80,6 +89,78 @@ export default function Auth() {
     }
   };
 
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim() || !resetCurrentPassword) {
+      toast.error("Email dan password login saat ini harus diisi");
+      return;
+    }
+    if (!resetNewLoginPassword && !resetNewAdminPassword) {
+      toast.error("Isi minimal salah satu password baru");
+      return;
+    }
+    if (resetNewLoginPassword && resetNewLoginPassword.length < 6) {
+      toast.error("Password login baru minimal 6 karakter");
+      return;
+    }
+    if (resetNewAdminPassword && resetNewAdminPassword.length < 6) {
+      toast.error("Password admin baru minimal 6 karakter");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      // 1. Konfirmasi dengan password login saat ini
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: resetEmail.trim(),
+        password: resetCurrentPassword,
+      });
+      if (signInError) {
+        toast.error("Email atau password login saat ini salah");
+        return;
+      }
+
+      // 2. Update password login (jika diisi)
+      if (resetNewLoginPassword) {
+        const { error: updErr } = await supabase.auth.updateUser({
+          password: resetNewLoginPassword,
+        });
+        if (updErr) {
+          toast.error("Gagal update password login: " + updErr.message);
+          return;
+        }
+      }
+
+      // 3. Update password admin di app_settings (jika diisi)
+      if (resetNewAdminPassword) {
+        const { error: adminErr } = await (supabase as any)
+          .from("app_settings")
+          .upsert(
+            { key: "admin_password", value: resetNewAdminPassword, updated_at: new Date().toISOString() },
+            { onConflict: "key" }
+          );
+        if (adminErr) {
+          toast.error("Gagal update password admin: " + adminErr.message);
+          return;
+        }
+      }
+
+      // 4. Sign out supaya user login ulang dengan password baru
+      await supabase.auth.signOut();
+
+      toast.success("Password berhasil diperbarui. Silakan login kembali.");
+      setResetOpen(false);
+      setResetEmail("");
+      setResetCurrentPassword("");
+      setResetNewLoginPassword("");
+      setResetNewAdminPassword("");
+    } catch (err) {
+      toast.error("Terjadi kesalahan saat reset password");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -129,9 +210,95 @@ export default function Auth() {
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Login
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setResetEmail(email);
+                setResetOpen(true);
+              }}
+              disabled={isLoading}
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              Reset Password
+            </Button>
           </form>
         </CardContent>
       </Card>
+
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Konfirmasi dengan password login saat ini, lalu isi password baru yang ingin diubah.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleResetSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="reset-email">Email</Label>
+              <Input
+                id="reset-email"
+                type="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                disabled={resetLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reset-current">Password Login Saat Ini (konfirmasi)</Label>
+              <Input
+                id="reset-current"
+                type="password"
+                placeholder="••••••••"
+                value={resetCurrentPassword}
+                onChange={(e) => setResetCurrentPassword(e.target.value)}
+                disabled={resetLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reset-new-login">Password Login Baru (opsional)</Label>
+              <Input
+                id="reset-new-login"
+                type="password"
+                placeholder="Kosongkan jika tidak diubah"
+                value={resetNewLoginPassword}
+                onChange={(e) => setResetNewLoginPassword(e.target.value)}
+                disabled={resetLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reset-new-admin">Password Admin Baru (opsional)</Label>
+              <Input
+                id="reset-new-admin"
+                type="password"
+                placeholder="Kosongkan jika tidak diubah"
+                value={resetNewAdminPassword}
+                onChange={(e) => setResetNewAdminPassword(e.target.value)}
+                disabled={resetLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Password admin digunakan untuk verifikasi update/hapus/retur kontrak.
+              </p>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setResetOpen(false)}
+                disabled={resetLoading}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={resetLoading}>
+                {resetLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Simpan
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
