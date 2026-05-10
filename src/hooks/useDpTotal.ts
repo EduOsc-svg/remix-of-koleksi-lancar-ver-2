@@ -9,7 +9,7 @@ import { startOfMonth, endOfMonth, startOfYear, endOfYear, format } from 'date-f
 const fetchDpTotal = async (start: string, end: string): Promise<{ total_dp: number; contract_count: number }> => {
   const { data: contracts, error: cErr } = await supabase
     .from('credit_contracts')
-    .select('id, dp')
+    .select('id, dp' as any)
     .neq('status', 'returned')
     .gte('start_date', start)
     .lte('start_date', end);
