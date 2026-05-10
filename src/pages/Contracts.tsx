@@ -313,9 +313,17 @@ export default function Contracts() {
   };
 
   const verifyPassword = async (password: string): Promise<boolean> => {
-    // Password admin terpisah untuk verifikasi update/delete/return kontrak
-    const ADMIN_UPDATE_PASSWORD = "Kemuje97";
-    return password === ADMIN_UPDATE_PASSWORD;
+    // Password admin diambil dari tabel app_settings (key='admin_password')
+    const { data, error } = await (supabase as any)
+      .from("app_settings")
+      .select("value")
+      .eq("key", "admin_password")
+      .maybeSingle();
+    if (error || !data) {
+      // Fallback default kalau tabel belum tersedia
+      return password === "Kemuje97";
+    }
+    return password === data.value;
   };
 
   const handlePasswordSubmit = async () => {
