@@ -13,6 +13,7 @@ export interface CreditContract {
   product_type: string | null;
   total_loan_amount: number;
   omset: number | null;
+  dp: number | null;
   tenor_days: number;
   daily_installment_amount: number;
   current_installment_index: number;
