@@ -576,6 +576,7 @@ export default function Contracts() {
         start_date: formData.start_date,
         status: statusForPrint,
         omset: modalEfektif,
+        dp: formData.dp || 0,
       } as any);
 
       if (!newContract?.id) {
