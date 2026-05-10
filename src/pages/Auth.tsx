@@ -140,9 +140,30 @@ export default function Auth() {
             { onConflict: "key" }
           );
         if (adminErr) {
-          toast.error("Gagal update password admin: " + adminErr.message);
+          console.error("[ResetAdmin] upsert error", adminErr);
+          toast.error("Gagal update password admin: " + (adminErr.message || JSON.stringify(adminErr)));
           return;
         }
+
+        // Verifikasi: baca ulang nilai untuk memastikan benar tersimpan
+        const { data: verifyData, error: verifyErr } = await (supabase as any)
+          .from("app_settings")
+          .select("value")
+          .eq("key", "admin_password")
+          .maybeSingle();
+        if (verifyErr || !verifyData) {
+          console.error("[ResetAdmin] verify error", verifyErr, verifyData);
+          toast.error(
+            "Password admin tidak terverifikasi tersimpan. Cek apakah tabel app_settings sudah ada."
+          );
+          return;
+        }
+        if (verifyData.value !== resetNewAdminPassword) {
+          console.error("[ResetAdmin] mismatch", verifyData.value);
+          toast.error("Password admin tersimpan tidak sesuai input. Hubungi developer.");
+          return;
+        }
+        console.log("[ResetAdmin] password admin tersimpan OK");
       }
 
       // 4. Sign out supaya user login ulang dengan password baru
