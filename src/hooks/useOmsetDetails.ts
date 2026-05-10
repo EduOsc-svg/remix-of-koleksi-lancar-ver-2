@@ -52,7 +52,7 @@ const fetchOmsetDetails = async (
   const [{ data: contracts, error: cErr }, { data: agents, error: aErr }] = await Promise.all([
     supabase
       .from('credit_contracts')
-      .select('id, contract_ref, start_date, sales_agent_id, omset, total_loan_amount, customers(name, phone)')
+      .select('id, contract_ref, start_date, sales_agent_id, omset, dp, total_loan_amount, customers(name, phone)' as any)
       .neq('status', 'returned')
       .gte('start_date', start)
       .lte('start_date', end),

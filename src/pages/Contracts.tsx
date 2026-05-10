@@ -290,7 +290,7 @@ export default function Contracts() {
       start_date: contract.start_date || new Date().toISOString().split("T")[0],
       status: contract.status,
       modal: (contract as any).omset || 0,
-      dp: 0,
+        dp: (contract as any).dp || 0,
       // Convert stored TOTAL keuntungan -> per-day for UI display
       keuntungan: (() => {
         const totalKeuntungan = (contract as any).keuntungan || 0;
@@ -424,6 +424,7 @@ export default function Contracts() {
           start_date: formData.start_date,
           status: formData.status,
           omset: Math.max(0, (formData.modal || 0) - (formData.dp || 0)),
+          dp: formData.dp || 0,
           _note: note,
         } as any);
 
@@ -489,6 +490,7 @@ export default function Contracts() {
           start_date: formData.start_date,
           status: formData.status,
           omset: Math.max(0, (formData.modal || 0) - (formData.dp || 0)),
+          dp: formData.dp || 0,
         } as any);
         
         // Generate installment coupons for new active contracts
@@ -574,6 +576,7 @@ export default function Contracts() {
         start_date: formData.start_date,
         status: statusForPrint,
         omset: modalEfektif,
+        dp: formData.dp || 0,
       } as any);
 
       if (!newContract?.id) {
@@ -1441,6 +1444,10 @@ export default function Contracts() {
                         <div>
                           <p className="text-sm text-muted-foreground">Modal</p>
                           <p className="font-semibold text-lg">{formatRupiah(selectedContract.omset || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">DP (Down Payment)</p>
+                          <p className="font-semibold text-lg text-orange-600">{formatRupiah((selectedContract as any).dp || 0)}</p>
                         </div>
                           <div>
                             <p className="text-sm text-muted-foreground">Keuntungan</p>
