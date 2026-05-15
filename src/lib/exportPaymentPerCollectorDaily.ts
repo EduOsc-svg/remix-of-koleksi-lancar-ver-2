@@ -29,7 +29,13 @@ const HEADERS = [
   'No', 'Konsumen', 'Kode Kontrak', 'No Kupon', 'Jumlah Kupon', 'Kupon Dibayar', 'Angsuran', 'Total Tertagih', 'Status'
 ];
 // Increased widths for better readability, reduced Kode Kontrak with wrap text
-const COL_WIDTHS = [6, 30, 10, 12, 13, 13, 16, 18, 15];
+const COL_WIDTHS = [6, 30, 10, 12, 11, 11, 12, 16, 15];
+
+// Color tokens for payment status (based on paid vs total)
+const PAYMENT_STATUS_FILLS: Record<string, { bg: string; fg: string }> = {
+  not_paid:    { bg: 'FFFFC7CE', fg: 'FF9C0006' }, // red
+  partial:     { bg: 'FFFFEB9C', fg: 'FF9C5700' }, // yellow
+};
 
 // Color tokens for status cells
 const STATUS_FILLS: Record<PaymentDetail['status'], { bg: string; fg: string }> = {
@@ -293,6 +299,24 @@ export const exportPaymentPerCollectorDaily = async (
         if (col === 1 || col === 4 || col === 5 || col === 6) cell.alignment = { horizontal: 'center' };
         // Number format untuk Jumlah Kupon dan Kupon Dibayar
         if (col === 5 || col === 6) cell.numFmt = '#,##0';
+        // Kupon Dibayar cell: colored background based on payment status
+        if (col === 6) {
+          // Determine payment status: not_paid, partial, or paid_full
+          if (d.paidCount === 0) {
+            // Tidak bayar: Merah
+            const fill = PAYMENT_STATUS_FILLS['not_paid'];
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill.bg } };
+            cell.font = { bold: true, size: 12, color: { argb: fill.fg } };
+          } else if (d.paidCount === d.couponCount && d.couponCount > 0) {
+            // Lunas/Bayar Penuh: Tanpa warna (normal)
+            cell.font = { size: 12 };
+          } else if (d.paidCount > 0 && d.paidCount < d.couponCount) {
+            // Bayar Sebagian: Kuning
+            const fill = PAYMENT_STATUS_FILLS['partial'];
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill.bg } };
+            cell.font = { bold: true, size: 12, color: { argb: fill.fg } };
+          }
+        }
         // Currency format dan right alignment untuk Angsuran dan Total Tertagih
         if (col === 7 || col === 8) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
         // Status cell: colored background
