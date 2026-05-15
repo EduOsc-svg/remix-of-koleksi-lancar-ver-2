@@ -24,7 +24,32 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLogActivity } from "@/hooks/useActivityLog";
 
 /**
- * DailyDueList — Daftar Penagihan yang Belum Diproses
+ * DailyDueList — Daftar Penagihan Harian (Daily Collection Queue)
+ *
+ * KONSEP METODE DAFTAR PENAGIHAN HARIAN:
+ * 
+ * Props:
+ *  - selectedDate: Date parameter untuk filter handover berdasarkan handover_date
+ *                 Hanya tampilkan handover yang sesuai dengan tanggal yang dipilih
+ * 
+ * Alur Kerja Setiap Hari:
+ * ┌─────────────────────────────────────────────────────────┐
+ * │ 1. PAGI - Serah Terima Kupon (Tab "Belum Bayar")       │
+ * │    └─ Input HandoverCouponForm → coupon_handovers baru │
+ * │                                                         │
+ * │ 2. SIANG - Input Pembayaran (Tab "Input Pembayaran")   │
+ * │    └─ Daftar ditampilkan di DailyDueList              │
+ * │    └─ Kolektor membayar hasil penagihan                │
+ * │    └─ Sebagian/Semua kupon dibayar                     │
+ * │                                                         │
+ * │ 3. AKHIR HARI - Data Daftar Menghilang               │
+ * │    └─ Trigger: currentIndex >= start_index            │
+ * │    └─ Data batch TIDAK ditampilkan lagi                │
+ * │                                                         │
+ * │ 4. BESOK - Cycle Berulang                             │
+ * │    └─ Sisa kupon dari kemarin → Handover baru          │
+ * │    └─ Daftar muncul lagi di DailyDueList              │
+ * └─────────────────────────────────────────────────────────┘
  *
  * Sumber data: `coupon_handovers` (kupon yang sudah keluar/diserahterimakan ke kolektor).
  * "Penagihan hari ini" = batch handover yang BELUM PERNAH ADA PEMBAYARAN
@@ -96,10 +121,10 @@ function buildRow(h: CouponHandover): DueRow | null {
   };
 }
 
-export function DailyDueList() {
+export function DailyDueList({ selectedDate }: { selectedDate?: string }) {
   const queryClient = useQueryClient();
   const logActivity = useLogActivity();
-  const { data: handovers, isLoading } = useCouponHandovers();
+  const { data: handovers, isLoading } = useCouponHandovers(selectedDate);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Build rows dari semua handover yang masih outstanding

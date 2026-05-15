@@ -26,10 +26,10 @@ interface CollectorGroup {
 }
 
 const HEADERS = [
-  'No', 'Konsumen', 'Kode Kontrak', 'Pembayaran ke', 'Jumlah Kupon', 'Kupon Dibayar', 'Angsuran/Kupon (Rp)', 'Total Tertagih (Rp)', 'Status'
+  'No', 'Konsumen', 'Kode Kontrak', 'No Kupon', 'Jumlah Kupon', 'Kupon Dibayar', 'Angsuran', 'Total Tertagih', 'Status'
 ];
-// Reduced widths to encourage text wrapping for multi-word headers
-const COL_WIDTHS = [5, 28, 12, 11, 11, 11, 15, 17, 14];
+// Increased widths for better readability, reduced Kode Kontrak with wrap text
+const COL_WIDTHS = [6, 30, 10, 12, 13, 13, 16, 18, 15];
 
 // Color tokens for status cells
 const STATUS_FILLS: Record<PaymentDetail['status'], { bg: string; fg: string }> = {
@@ -182,7 +182,7 @@ export const exportPaymentPerCollectorDaily = async (
   summarySheet.mergeCells('A1:F1');
   const t = summarySheet.getCell('A1');
   t.value = 'LAPORAN INPUT PEMBAYARAN - RINGKASAN PER KOLEKTOR';
-  t.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+  t.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
   t.alignment = { horizontal: 'center' };
   t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
 
@@ -193,11 +193,11 @@ export const exportPaymentPerCollectorDaily = async (
   d.alignment = { horizontal: 'center' };
   summarySheet.addRow([]);
 
-  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Konsumen', 'Total Kupon', 'Total Dibayar', 'Total Tertagih (Rp)'];
+  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Konsumen', 'Total Kupon', 'Total Dibayar', 'Total Tertagih'];
   const sh = summarySheet.addRow(summaryHeaders);
   sh.height = 25; // Increase height for wrapped text
   sh.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
@@ -219,6 +219,7 @@ export const exportPaymentPerCollectorDaily = async (
     const r = summarySheet.addRow([i + 1, c.collectorName, c.collectorCode, konsumenCount, totalCoupons, totalPaid, totalAmount]);
     r.eachCell((cell, col) => {
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+      cell.font = { size: 12 };
       if (col === 1) cell.alignment = { horizontal: 'center' };
       else if (col === 5 || col === 6) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'center' }; }
       else if (col === 7) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
@@ -241,7 +242,7 @@ export const exportPaymentPerCollectorDaily = async (
     sheet.mergeCells('A1:I1');
     const tt = sheet.getCell('A1');
     tt.value = `LAPORAN INPUT PEMBAYARAN - ${c.collectorName.toUpperCase()}`;
-    tt.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    tt.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
     tt.alignment = { horizontal: 'center' };
     tt.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
 
@@ -265,7 +266,7 @@ export const exportPaymentPerCollectorDaily = async (
     const hRow = sheet.addRow(HEADERS);
     hRow.height = 30; // Increase height for wrapped text
     hRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
@@ -285,13 +286,20 @@ export const exportPaymentPerCollectorDaily = async (
       ]);
       row.eachCell((cell, col) => {
         cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        cell.font = { size: 12 };
+        // Wrap text untuk Kode Kontrak
+        if (col === 3) cell.alignment = { horizontal: 'center', wrapText: true };
+        // Center alignment untuk: No, No Kupon, Jumlah Kupon, Kupon Dibayar
         if (col === 1 || col === 4 || col === 5 || col === 6) cell.alignment = { horizontal: 'center' };
+        // Number format untuk Jumlah Kupon dan Kupon Dibayar
         if (col === 5 || col === 6) cell.numFmt = '#,##0';
+        // Currency format dan right alignment untuk Angsuran dan Total Tertagih
         if (col === 7 || col === 8) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
+        // Status cell: colored background
         if (col === 9) {
           const fill = STATUS_FILLS[d.status];
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill.bg } };
-          cell.font = { bold: true, color: { argb: fill.fg } };
+          cell.font = { bold: true, size: 12, color: { argb: fill.fg } };
           cell.alignment = { horizontal: 'center' };
         }
       });
@@ -308,7 +316,7 @@ export const exportPaymentPerCollectorDaily = async (
         '',
       ]);
       sub.eachCell((cell, col) => {
-        cell.font = { bold: true };
+        cell.font = { bold: true, size: 12 };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
         cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
         if (col === 5 || col === 6) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'center' }; }

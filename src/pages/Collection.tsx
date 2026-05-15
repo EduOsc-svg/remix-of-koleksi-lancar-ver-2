@@ -30,6 +30,7 @@ export default function Collection() {
   // Manifest state (declared first so hooks below can use them)
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("unpaid");
 
   const { data: collectors } = useCollectors();
   const { data: contracts, isLoading: contractsLoading } = useContracts("active");
@@ -221,15 +222,31 @@ export default function Collection() {
         </TabsContent>
 
         <TabsContent value="payment" className="mt-6">
-          <div className="flex items-end justify-between gap-4 mb-4">
-            <div className="w-48">
-              <label className="text-sm text-muted-foreground">Pilih Tanggal</label>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full"
-              />
+          <div className="flex items-end justify-between gap-4 mb-4 flex-wrap">
+            <div className="flex items-end gap-4">
+              <div className="w-48">
+                <label className="text-sm text-muted-foreground">Pilih Tanggal</label>
+                <Input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="w-56">
+                <label className="text-sm text-muted-foreground">Filter Status Pembayaran</label>
+                <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Filter Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unpaid">Belum Bayar</SelectItem>
+                    <SelectItem value="partial">Sebagian Bayar</SelectItem>
+                    <SelectItem value="paid">Lunas</SelectItem>
+                    <SelectItem value="all">Semua</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <Button 
@@ -254,7 +271,38 @@ export default function Collection() {
               </Button>
             </div>
           </div>
-          <DailyDueList />
+          
+          {/* Filtered Handovers based on payment status */}
+          {(() => {
+            const filteredHandovers = (handovers || []).filter((h: any) => {
+              const currentIndex = h.credit_contracts?.current_installment_index || 0;
+              
+              // Determine payment status
+              if (paymentStatusFilter === "unpaid") {
+                // Belum bayar: currentIndex < start_index
+                return currentIndex < h.start_index;
+              } else if (paymentStatusFilter === "partial") {
+                // Sebagian: start_index <= currentIndex < end_index
+                return currentIndex >= h.start_index && currentIndex < h.end_index;
+              } else if (paymentStatusFilter === "paid") {
+                // Lunas: currentIndex >= end_index
+                return currentIndex >= h.end_index;
+              } else {
+                // all
+                return true;
+              }
+            });
+            
+            return (
+              <>
+                <div className="text-sm text-muted-foreground mb-3">
+                  Menampilkan {filteredHandovers.length} dari {handovers?.length || 0} serah terima
+                </div>
+              </>
+            );
+          })()}
+          
+          <DailyDueList selectedDate={selectedDate} />
         </TabsContent>
 
         <TabsContent value="outstanding" className="space-y-6 mt-6">
