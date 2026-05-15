@@ -35,7 +35,8 @@ const HEADERS = [
   'No', 'Konsumen', 'Kode Kontrak', 'Pembayaran Ke', 'Kupon Bawa', 'Angsuran/Kupon (Rp)', 'Total (Rp)'
 ];
 
-const COL_WIDTHS = [5, 30, 16, 14, 12, 18, 18];
+// Reduced widths to encourage text wrapping for multi-word headers
+const COL_WIDTHS = [5, 30, 14, 12, 10, 15, 16];
 
 export const exportHandoverPerCollectorDaily = async (handovers: EnrichedHandover[], selectedDate: string) => {
   const workbook = new ExcelJS.Workbook();
@@ -83,8 +84,9 @@ export const exportHandoverPerCollectorDaily = async (handovers: EnrichedHandove
   summarySheet.addRow([]);
 
   // Headers
-  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Sisa Kupon', 'Total Sisa (Rp)'];
+  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Konsumen', 'Sisa Kupon', 'Total Sisa (Rp)'];
   const summaryHRow = summarySheet.addRow(summaryHeaders);
+  summaryHRow.height = 25; // Increase height for wrapped text
   summaryHRow.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };
@@ -97,10 +99,21 @@ export const exportHandoverPerCollectorDaily = async (handovers: EnrichedHandove
   // Summary rows
   let summaryRowNum = summaryStartRow;
   Array.from(byCollector.values()).forEach((summary, i) => {
+    // compute distinct consumers for the collector: acuan adalah nomor HP (phone_number)
+    const customerSet = new Set<string>();
+    summary.handovers.forEach((h) => {
+      const phoneNumber = (h.credit_contracts?.customers as any)?.phone_number || 
+                         (h.credit_contracts?.customers?.name ? h.credit_contracts.customers.name : (h.contract_id || ''));
+      const normalizedValue = String(phoneNumber).trim().toLowerCase();
+      customerSet.add(normalizedValue);
+    });
+    const konsumenCount = customerSet.size;
+
     const summaryRowValues = [
       i + 1,
       summary.collector_name,
       summary.collector_code,
+      konsumenCount,
       summary.total_sisa_kupon,
       summary.total_sisa_nominal,
     ];
@@ -121,7 +134,7 @@ export const exportHandoverPerCollectorDaily = async (handovers: EnrichedHandove
     summaryRowNum += 1;
   });
 
-  summarySheet.columns = [5, 20, 12, 14, 18].map((width) => ({ width }));
+  summarySheet.columns = [5, 20, 12, 14, 14, 18].map((width) => ({ width }));
 
   // Create detail sheet per collector
   const usedNames = new Set<string>();
@@ -149,7 +162,17 @@ export const exportHandoverPerCollectorDaily = async (handovers: EnrichedHandove
     // Date & Collector info
     sheet.mergeCells('A2:H2');
     const dateCell = sheet.getCell('A2');
-    dateCell.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} | Kolektor: ${collector_name} (${collector_code})`;
+    // compute distinct consumers for this collector: acuan adalah nomor HP (phone_number)
+    const customerSetForCollector = new Set<string>();
+    collectorHandovers.forEach((h) => {
+      const phoneNumber = (h.credit_contracts?.customers as any)?.phone_number || 
+                         (h.credit_contracts?.customers?.name ? h.credit_contracts.customers.name : (h.contract_id || ''));
+      const normalizedValue = String(phoneNumber).trim().toLowerCase();
+      customerSetForCollector.add(normalizedValue);
+    });
+    const konsumenCountForCollector = customerSetForCollector.size;
+
+    dateCell.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} | Kolektor: ${collector_name} (${collector_code}) | Jumlah Konsumen: ${konsumenCountForCollector}`;
     dateCell.font = { italic: true, size: 12 };
     dateCell.alignment = { horizontal: 'left' };
 
@@ -157,6 +180,7 @@ export const exportHandoverPerCollectorDaily = async (handovers: EnrichedHandove
 
     // Headers
     const hRow = sheet.addRow(HEADERS);
+    hRow.height = 30; // Increase height for wrapped text
     hRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };

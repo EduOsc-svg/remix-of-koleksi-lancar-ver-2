@@ -24,17 +24,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLogActivity } from "@/hooks/useActivityLog";
 
 /**
- * DailyDueList — Sinkron dengan tab "Belum Bayar".
+ * DailyDueList — Daftar Penagihan yang Belum Diproses
  *
  * Sumber data: `coupon_handovers` (kupon yang sudah keluar/diserahterimakan ke kolektor).
- * "Kupon hari ini" = jumlah kupon yang masih BELUM LUNAS dari setiap batch handover
- * (unpaidInRange = coupon_count - paidInRange, di mana paidInRange dihitung
- * berdasarkan `credit_contracts.current_installment_index`).
+ * "Penagihan hari ini" = batch handover yang BELUM PERNAH ADA PEMBAYARAN
+ * (currentIndex < start_index = belum ada pembayaran dalam batch ini).
  *
- * Logika pembayaran:
- *  - Default Kupon Kembali = 0 → semua kupon outstanding dianggap LUNAS.
- *  - Kupon yang ditandai kembali tetap UNPAID & muncul di "Belum Bayar".
- *  - Pelanggan yang sudah lunas (unpaidInRange = 0) otomatis HILANG dari daftar.
+ * Logika penampilan:
+ *  - Tampilkan: Jika belum ada pembayaran dalam batch (currentIndex < start_index)
+ *  - Hilang: Segera setelah ada pembayaran (baik sebagian atau penuh)
+ *            → currentIndex >= start_index = sudah diproses minimal 1 kupon
+ *  - Hilang juga: Jika semua kupon lunas (unpaid = 0)
+ *
+ * Saat pembayaran:
+ *  - Default Kupon Kembali = 0 → semua kupon outstanding dianggap LUNAS
+ *  - Kupon yang ditandai kembali tetap UNPAID & muncul di tab "Belum Bayar"
  */
 
 interface DueRow {
@@ -63,7 +67,12 @@ function buildRow(h: CouponHandover): DueRow | null {
   );
   const paid = Math.max(0, paidInRange);
   const unpaid = h.coupon_count - paid;
-  if (unpaid <= 0) return null;
+  
+  // HILANG dari daftar jika:
+  // 1. Semua kupon lunas (unpaid <= 0), ATAU
+  // 2. Ada pembayaran dalam batch ini (currentIndex >= start_index) = sudah diproses
+  const hasPaymentInBatch = currentIndex >= h.start_index;
+  if (unpaid <= 0 || hasPaymentInBatch) return null;
 
   // Kupon outstanding = index dari max(start_index, currentIndex+1) sampai end_index
   const firstUnpaid = Math.max(h.start_index, currentIndex + 1);
@@ -234,9 +243,9 @@ export function DailyDueList() {
           </CardTitle>
           <CardDescription>
             Daftar pelanggan dengan kupon <strong>keluar</strong> (sudah diserahterimakan ke
-            kolektor) yang masih belum lunas. Sinkron dengan tab <strong>Belum Bayar</strong>.
-            Klik <strong>Bayar</strong> untuk mencatat hasil tagihan; pelanggan yang lunas
-            otomatis hilang dari daftar.
+            kolektor) yang <strong>belum pernah diproses</strong> (belum ada pembayaran). 
+            Klik <strong>Bayar</strong> untuk mencatat hasil tagihan; data akan hilang dari 
+            daftar segera setelah diproses (baik sebagian maupun penuh).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -6,8 +6,10 @@ interface PaymentDetail {
   contractId: string;
   customerName: string;
   contractRef: string;
-  startIndex: number;        // pembayaran ke (start)
-  endIndex: number;          // pembayaran ke (end)
+  startIndex: number;        // pembayaran ke (start dari handover)
+  endIndex: number;          // pembayaran ke (end dari handover)
+  paidStartIndex: number;    // pembayaran ke (start yang sudah terbayar)
+  paidEndIndex: number;      // pembayaran ke (end yang sudah terbayar)
   couponCount: number;       // jumlah kupon (handover)
   paidCount: number;         // kupon dibayar
   dailyAmount: number;
@@ -26,7 +28,8 @@ interface CollectorGroup {
 const HEADERS = [
   'No', 'Konsumen', 'Kode Kontrak', 'Pembayaran ke', 'Jumlah Kupon', 'Kupon Dibayar', 'Angsuran/Kupon (Rp)', 'Total Tertagih (Rp)', 'Status'
 ];
-const COL_WIDTHS = [5, 28, 14, 14, 12, 14, 18, 20, 16];
+// Reduced widths to encourage text wrapping for multi-word headers
+const COL_WIDTHS = [5, 28, 12, 11, 11, 11, 15, 17, 14];
 
 // Color tokens for status cells
 const STATUS_FILLS: Record<PaymentDetail['status'], { bg: string; fg: string }> = {
@@ -90,7 +93,9 @@ export const exportPaymentPerCollectorDaily = async (
         const collectorCode = h.collectors?.collector_code || '-';
 
         const currentIndex = h.credit_contracts?.current_installment_index ?? contract?.current_installment_index ?? 0;
-        const paidCount = Math.max(0, Math.min(currentIndex, h.end_index) - h.start_index + 1);
+        const paidEndIndex = Math.min(currentIndex, h.end_index);
+        const paidStartIndex = h.start_index;
+        const paidCount = Math.max(0, paidEndIndex - paidStartIndex + 1);
         const totalAmount = paidCount * dailyAmount;
 
         const merged = {
@@ -108,6 +113,8 @@ export const exportPaymentPerCollectorDaily = async (
           contractRef,
           startIndex: h.start_index,
           endIndex: h.end_index,
+          paidStartIndex,
+          paidEndIndex,
           couponCount: h.coupon_count,
           paidCount,
           dailyAmount,
@@ -134,6 +141,7 @@ export const exportPaymentPerCollectorDaily = async (
           contractId: p.contract_id,
           customerName, contractRef,
           startIndex: p.installment_index, endIndex: p.installment_index,
+          paidStartIndex: p.installment_index, paidEndIndex: p.installment_index,
           couponCount: 0, paidCount: 0,
           dailyAmount, totalAmount: 0,
           status, statusLabel: label,
@@ -151,10 +159,13 @@ export const exportPaymentPerCollectorDaily = async (
       e._indices.sort((a, b) => a - b);
       e.startIndex = e._indices[0];
       e.endIndex = e._indices[e._indices.length - 1];
+      e.paidStartIndex = e._indices[0];
+      e.paidEndIndex = e._indices[e._indices.length - 1];
       const group = ensureCollector(e._collectorId, e._collectorName, e._collectorCode);
       group.details.push({
         contractId: e.contractId, customerName: e.customerName, contractRef: e.contractRef,
         startIndex: e.startIndex, endIndex: e.endIndex,
+        paidStartIndex: e.paidStartIndex, paidEndIndex: e.paidEndIndex,
         couponCount: e.couponCount, paidCount: e.paidCount,
         dailyAmount: e.dailyAmount, totalAmount: e.totalAmount,
         status: e.status, statusLabel: e.statusLabel,
@@ -182,8 +193,9 @@ export const exportPaymentPerCollectorDaily = async (
   d.alignment = { horizontal: 'center' };
   summarySheet.addRow([]);
 
-  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Total Kupon', 'Total Dibayar', 'Total Tertagih (Rp)'];
+  const summaryHeaders = ['No', 'Kolektor', 'Kode', 'Konsumen', 'Total Kupon', 'Total Dibayar', 'Total Tertagih (Rp)'];
   const sh = summarySheet.addRow(summaryHeaders);
+  sh.height = 25; // Increase height for wrapped text
   sh.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };
@@ -195,15 +207,24 @@ export const exportPaymentPerCollectorDaily = async (
     const totalCoupons = c.details.reduce((s, x) => s + x.couponCount, 0);
     const totalPaid = c.details.reduce((s, x) => s + x.paidCount, 0);
     const totalAmount = c.details.reduce((s, x) => s + x.totalAmount, 0);
-    const r = summarySheet.addRow([i + 1, c.collectorName, c.collectorCode, totalCoupons, totalPaid, totalAmount]);
+    // compute distinct consumers: acuan adalah nomor HP (phone_number), fallback ke customerName
+    const customerSet = new Set<string>();
+    c.details.forEach((d) => {
+      const contractObj = contracts.find((ct) => ct.id === d.contractId);
+      const phoneNumber = contractObj?.customers?.phone_number || (d.customerName || '-').trim();
+      const normalizedValue = String(phoneNumber).trim().toLowerCase();
+      customerSet.add(normalizedValue);
+    });
+    const konsumenCount = customerSet.size;
+    const r = summarySheet.addRow([i + 1, c.collectorName, c.collectorCode, konsumenCount, totalCoupons, totalPaid, totalAmount]);
     r.eachCell((cell, col) => {
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
       if (col === 1) cell.alignment = { horizontal: 'center' };
-      else if (col === 4 || col === 5) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'center' }; }
-      else if (col === 6) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
+      else if (col === 5 || col === 6) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'center' }; }
+      else if (col === 7) { cell.numFmt = '"Rp "#,##0'; cell.alignment = { horizontal: 'right' }; }
     });
   });
-  summarySheet.columns = [5, 22, 12, 14, 14, 20].map((w) => ({ width: w }));
+  summarySheet.columns = [5, 22, 12, 14, 14, 14, 20].map((w) => ({ width: w }));
 
   // ========= Per-collector detail sheets =========
   const usedNames = new Set<string>();
@@ -226,12 +247,23 @@ export const exportPaymentPerCollectorDaily = async (
 
     sheet.mergeCells('A2:I2');
     const dd = sheet.getCell('A2');
-    dd.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} | Kolektor: ${c.collectorName} (${c.collectorCode})`;
+    // compute distinct consumers for this collector: acuan adalah nomor HP (phone_number)
+    const customerSetForCollector = new Set<string>();
+    c.details.forEach((d) => {
+      const contractObj = contracts.find((ct) => ct.id === d.contractId);
+      const phoneNumber = contractObj?.customers?.phone_number || (d.customerName || '-').trim();
+      const normalizedValue = String(phoneNumber).trim().toLowerCase();
+      customerSetForCollector.add(normalizedValue);
+    });
+    const konsumenCountForCollector = customerSetForCollector.size;
+
+    dd.value = `Tanggal: ${new Date(selectedDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} | Kolektor: ${c.collectorName} (${c.collectorCode}) | Jumlah Konsumen: ${konsumenCountForCollector}`;
     dd.font = { italic: true, size: 12 };
     dd.alignment = { horizontal: 'left' };
     sheet.addRow([]);
 
     const hRow = sheet.addRow(HEADERS);
+    hRow.height = 30; // Increase height for wrapped text
     hRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };
@@ -242,7 +274,11 @@ export const exportPaymentPerCollectorDaily = async (
     const startRow = hRow.number + 1;
 
     c.details.forEach((d, idx) => {
-      const range = d.startIndex === d.endIndex ? `${d.startIndex}` : `${d.startIndex}-${d.endIndex}`;
+      const range = d.paidCount === 0 
+        ? '0' 
+        : d.paidStartIndex === d.paidEndIndex 
+          ? `${d.paidStartIndex}` 
+          : `${d.paidStartIndex}-${d.paidEndIndex}`;
       const row = sheet.addRow([
         idx + 1, d.customerName, d.contractRef, range,
         d.couponCount, d.paidCount, d.dailyAmount, d.totalAmount, d.statusLabel,

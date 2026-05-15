@@ -256,14 +256,6 @@ export function OutstandingCouponsTable({ isLoading, handovers }: Props) {
       <SummaryCards />
       <FiltersRow />
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{totalItems} serah terima</p>
-        <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5 h-9 text-sm">
-          <Download className="h-4 w-4" />
-          Export Excel
-        </Button>
-      </div>
-
       {/* ─── Unified Table ─── */}
       <div className="border rounded-lg overflow-hidden">
         <Table>
