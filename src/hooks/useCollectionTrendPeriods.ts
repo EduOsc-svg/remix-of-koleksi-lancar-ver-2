@@ -13,9 +13,10 @@ export interface TrendDataPoint {
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 // Daily trend
-export const useDailyCollectionTrend = (days: number = 30) => {
+export const useDailyCollectionTrend = (days: number = 30, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: ['collection_trend_daily_v2', days],
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -69,9 +70,10 @@ export const useDailyCollectionTrend = (days: number = 30) => {
 };
 
 // Monthly trend
-export const useMonthlyCollectionTrend = (months: number = 12) => {
+export const useMonthlyCollectionTrend = (months: number = 12, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: ['collection_trend_monthly_v2', months],
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() - months);
@@ -130,9 +132,10 @@ export const useMonthlyCollectionTrend = (months: number = 12) => {
 };
 
 // Yearly trend
-export const useYearlyCollectionTrend = (years: number = 5) => {
+export const useYearlyCollectionTrend = (years: number = 5, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: ['collection_trend_yearly_v2', years],
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const startYear = new Date().getFullYear() - years + 1;
       const startDateStr = `${startYear}-01-01`;
