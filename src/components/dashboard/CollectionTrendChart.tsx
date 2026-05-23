@@ -52,10 +52,10 @@ export function CollectionTrendChart() {
   const [trendMonths, setTrendMonths] = useState(12);
   const [trendYears, setTrendYears] = useState(5);
   
-  // Data hooks - all trend hooks called unconditionally
-  const { data: dailyTrendData, isLoading: isLoadingDailyTrend } = useDailyCollectionTrend(trendDays);
-  const { data: monthlyTrendData, isLoading: isLoadingMonthlyTrend } = useMonthlyCollectionTrend(trendMonths);
-  const { data: yearlyTrendData, isLoading: isLoadingYearlyTrend } = useYearlyCollectionTrend(trendYears);
+  // Data hooks - only enable the active period to avoid unnecessary requests
+  const { data: dailyTrendData, isLoading: isLoadingDailyTrend } = useDailyCollectionTrend(trendDays, { enabled: trendPeriod === 'daily' });
+  const { data: monthlyTrendData, isLoading: isLoadingMonthlyTrend } = useMonthlyCollectionTrend(trendMonths, { enabled: trendPeriod === 'monthly' });
+  const { data: yearlyTrendData, isLoading: isLoadingYearlyTrend } = useYearlyCollectionTrend(trendYears, { enabled: trendPeriod === 'yearly' });
 
   // Active trend data based on period
   const activeTrendData = useMemo(() => {
