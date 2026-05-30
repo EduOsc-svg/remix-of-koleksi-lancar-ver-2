@@ -82,6 +82,8 @@ interface DueRow {
   unpaid_count: number;
   // installment indices (1-based) yang masih outstanding pada batch ini
   unpaid_indices: number[];
+  // installment indices (1-based) yang sudah LUNAS pada batch ini (bisa di-rollback ke Belum Bayar)
+  paid_indices: number[];
   // status batch: unpaid | partial | paid
   status: "unpaid" | "partial" | "paid";
 }
@@ -107,6 +109,11 @@ function buildRow(h: CouponHandover): DueRow | null {
   const indices: number[] = [];
   for (let i = firstUnpaid; i <= h.end_index; i++) indices.push(i);
 
+  // Kupon LUNAS dalam batch = start_index..min(currentIndex, end_index)
+  const lastPaid = Math.min(currentIndex, h.end_index);
+  const paidIndices: number[] = [];
+  for (let i = h.start_index; i <= lastPaid; i++) paidIndices.push(i);
+
   return {
     handover_id: h.id,
     contract_id: h.contract_id,
@@ -121,6 +128,7 @@ function buildRow(h: CouponHandover): DueRow | null {
     paid_count: paid,
     unpaid_count: unpaid,
     unpaid_indices: indices,
+    paid_indices: paidIndices,
     status,
   };
 }
