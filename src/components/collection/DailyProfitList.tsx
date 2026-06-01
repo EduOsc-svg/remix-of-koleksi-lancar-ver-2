@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +40,12 @@ export function DailyProfitList() {
   const [viewMode, setViewMode] = useState<"daily" | "monthly">("daily");
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<DailyProfit | null>(null);
+  const [detailPage, setDetailPage] = useState(1);
+  const DETAIL_PAGE_SIZE = 10;
+
+  useEffect(() => {
+    setDetailPage(1);
+  }, [selectedDate]);
 
   // Daily view data
   const { data: dailyPayments, isLoading: dailyLoading } = usePayments(selectedDate, selectedDate);
